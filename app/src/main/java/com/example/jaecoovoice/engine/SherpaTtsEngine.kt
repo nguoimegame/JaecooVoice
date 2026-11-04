@@ -1,6 +1,7 @@
 package com.example.jaecoovoice.engine
 
 import android.util.Log
+import com.k2fsa.sherpa.onnx.GenerationConfig
 import com.k2fsa.sherpa.onnx.OfflineTts
 import com.k2fsa.sherpa.onnx.OfflineTtsConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
@@ -20,23 +21,41 @@ class TtsAudio(
  */
 interface TtsEngine {
     fun generate(text: String, sid: Int = 0, speed: Float = 1.0f): TtsAudio
+
+    /**
+     * Streams [text]'s audio to [onChunk]. Returns the number of samples streamed (0 when the
+     * model produced nothing), [PHONEMIZER_UNAVAILABLE] or [SYNTHESIS_FAILED].
+     */
     fun generateStream(
         text: String,
         sid: Int = 0,
         speed: Float = 1.0f,
         isCancelled: () -> Boolean = { false },
         onChunk: (samples: FloatArray, sampleRate: Int) -> Unit
-    ): Boolean
+    ): Int
     fun release()
+
+    companion object {
+        /** espeak-ng could not start, or does not know the model's voice. */
+        const val PHONEMIZER_UNAVAILABLE = -1
+
+        /** sherpa-onnx threw. */
+        const val SYNTHESIS_FAILED = -2
+    }
 }
 
 /**
  * Wraps sherpa-onnx [OfflineTts] using VITS/Piper models.
  * Runs on CPU with [numThreads] threads.
+ *
+ * sherpa-onnx 2.x has no phonemizer, so Piper models ([TtsFrontend.ESPEAK]) are phonemized here
+ * with [phonemizer] and passed as `GenerationConfig.phonemeCodepoints`; other models
+ * ([TtsFrontend.TEXT]) still pass the text.
  */
 class SherpaTtsEngine(
-    model: TtsModel,
+    private val model: TtsModel,
     modelDir: File,
+    private val phonemizer: EspeakPhonemizer?,
     numThreads: Int = DEFAULT_THREADS,
     provider: String = DEFAULT_PROVIDER
 ) : TtsEngine {
@@ -46,16 +65,15 @@ class SherpaTtsEngine(
     init {
         val modelPath = File(modelDir, model.modelFile).absolutePath
         val tokensPath = File(modelDir, model.tokensFile).absolutePath
-        val dataDirPath = model.dataDir?.let { File(modelDir, it).absolutePath }.orEmpty()
         val lexiconPath = model.lexiconFile?.let { File(modelDir, it).absolutePath }.orEmpty()
         val ruleFsts = model.ruleFsts?.split(",")?.joinToString(",") {
             File(modelDir, it.trim()).absolutePath
         }.orEmpty()
 
+        // No dataDir: sherpa-onnx >= 2.0 ignores it (and warns); EspeakPhonemizer reads it instead.
         val vitsConfig = OfflineTtsVitsModelConfig(
             model = modelPath,
             tokens = tokensPath,
-            dataDir = dataDirPath,
             lexicon = lexiconPath
         )
         val modelConfig = OfflineTtsModelConfig(
@@ -69,6 +87,10 @@ class SherpaTtsEngine(
             ruleFsts = ruleFsts
         )
         tts = OfflineTts(null, config)
+        val modelLang = tts.lang()
+        if (model.frontend == TtsFrontend.ESPEAK && modelLang.isNotEmpty() && modelLang != model.espeakVoice) {
+            Log.w(TAG, "${model.id} says espeak voice '$modelLang', catalog has '${model.espeakVoice}'")
+        }
     }
 
     @Synchronized
@@ -78,31 +100,47 @@ class SherpaTtsEngine(
     }
 
     @Synchronized
-    @Suppress("TooGenericExceptionCaught")
+    @Suppress("TooGenericExceptionCaught", "ReturnCount")
     override fun generateStream(
         text: String,
         sid: Int,
         speed: Float,
         isCancelled: () -> Boolean,
         onChunk: (samples: FloatArray, sampleRate: Int) -> Unit
-    ): Boolean {
-        if (isCancelled()) return false
+    ): Int {
+        if (isCancelled()) return 0
+        val config = if (model.frontend == TtsFrontend.ESPEAK) {
+            val clauses = phonemizer?.clauses(text, model.espeakVoice) ?: return TtsEngine.PHONEMIZER_UNAVAILABLE
+            val sentences = PiperPhonemes.sentences(clauses, model.espeakVoice)
+            if (sentences.isEmpty()) return 0
+            GenerationConfig(sid = sid, speed = speed, phonemeCodepoints = PiperPhonemes.toCodepoints(sentences))
+        } else {
+            GenerationConfig(sid = sid, speed = speed)
+        }
         return try {
-            var aborted = false
             val rate = tts.sampleRate()
-            tts.generateWithCallback(text, sid, speed) { chunk ->
-                if (isCancelled()) {
-                    aborted = true
-                    0
-                } else {
+            var streamed = 0
+            // With phonemeCodepoints set, sherpa-onnx ignores the text argument.
+            val input = if (model.frontend == TtsFrontend.ESPEAK) "" else text
+            // A real class, not a lambda: sherpa-onnx's JNI looks up `invoke([F)Ljava/lang/Integer;`
+            // on the callback, which an invokedynamic lambda does not have (NoSuchMethodError).
+            val callback = object : (FloatArray) -> Int {
+                override fun invoke(chunk: FloatArray): Int {
+                    if (isCancelled()) return 0
                     onChunk(chunk, rate)
-                    1
+                    streamed += chunk.size
+                    return 1
                 }
             }
-            !aborted && !isCancelled()
+            val audio = tts.generateWithConfigAndCallback(input, config, callback)
+            if (streamed == 0 && !isCancelled() && audio.samples.isNotEmpty()) {
+                onChunk(audio.samples, audio.sampleRate)
+                streamed = audio.samples.size
+            }
+            streamed
         } catch (e: Exception) {
             Log.e(TAG, "generateStream failed", e)
-            false
+            TtsEngine.SYNTHESIS_FAILED
         }
     }
 
@@ -122,7 +160,7 @@ class SherpaTtsEngine(
  * Manages lazy-loading and lifecycle of [TtsEngine] instances for one active language.
  */
 class TtsEngineSlot(
-    private val factory: (TtsModel, File) -> TtsEngine = { model, dir -> SherpaTtsEngine(model, dir) }
+    private val factory: (TtsModel, File) -> TtsEngine
 ) {
     private var engine: TtsEngine? = null
     private var language: String? = null

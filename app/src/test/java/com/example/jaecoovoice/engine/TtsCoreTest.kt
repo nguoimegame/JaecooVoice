@@ -1,5 +1,6 @@
 package com.example.jaecoovoice.engine
 
+import com.example.jaecoovoice.engine.TtsCore.SynthResult
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -15,7 +16,9 @@ class TtsCoreTest {
 
     private class FakeTtsEngine(
         val sampleRate: Int = 22050,
-        var chunksToEmit: List<FloatArray> = listOf(floatArrayOf(0.1f, 0.2f), floatArrayOf(0.3f, 0.4f))
+        var chunksToEmit: List<FloatArray> = listOf(floatArrayOf(0.1f, 0.2f), floatArrayOf(0.3f, 0.4f)),
+        /** Overrides what generateStream returns (e.g. TtsEngine.PHONEMIZER_UNAVAILABLE). */
+        val forcedResult: Int? = null
     ) : TtsEngine {
         var generateStreamCallCount = 0
         var released = false
@@ -30,17 +33,16 @@ class TtsCoreTest {
             speed: Float,
             isCancelled: () -> Boolean,
             onChunk: (samples: FloatArray, sampleRate: Int) -> Unit
-        ): Boolean {
+        ): Int {
             generateStreamCallCount++
-            var success = !isCancelled()
+            forcedResult?.let { return it }
+            var total = 0
             for (chunk in chunksToEmit) {
-                if (!success || isCancelled()) {
-                    success = false
-                    break
-                }
+                if (isCancelled()) break
                 onChunk(chunk, sampleRate)
+                total += chunk.size
             }
-            return success
+            return total
         }
 
         override fun release() {
@@ -67,7 +69,7 @@ class TtsCoreTest {
 
         assertFalse(core.isInstalled("vi"))
         val result = core.synthesize("vi", "Xin chào", isCancelled = { false }) { _, _ -> }
-        assertFalse(result)
+        assertEquals(SynthResult.Failed("tts model not installed: vi"), result)
         assertEquals(0, fakeEngine.generateStreamCallCount)
     }
 
@@ -88,7 +90,7 @@ class TtsCoreTest {
             receivedRate = rate
         }
 
-        assertTrue(result)
+        assertEquals(SynthResult.Spoken, result)
         assertEquals(1, fakeEngine.generateStreamCallCount)
         assertEquals(2, receivedChunks.size)
         assertEquals(22050, receivedRate)
@@ -118,7 +120,7 @@ class TtsCoreTest {
             chunkCount++
         }
 
-        assertFalse(result)
+        assertEquals(SynthResult.Cancelled, result)
         assertEquals(1, chunkCount)
     }
 
@@ -172,7 +174,7 @@ class TtsCoreTest {
 
         assertFalse(core.isInstalled("unsupported_lang"))
         val result = core.synthesize("unsupported_lang", "Hello", isCancelled = { false }) { _, _ -> }
-        assertFalse(result)
+        assertEquals(SynthResult.Failed("tts model not installed: unsupported_lang"), result)
         assertEquals(0, fakeEngine.generateStreamCallCount)
     }
 
@@ -183,7 +185,57 @@ class TtsCoreTest {
 
         markInstalled(temp.root, TtsCatalog.VI_VAIS1000)
         val result = core.synthesize("vi", "Xin chào", isCancelled = { false }) { _, _ -> }
-        assertFalse(result)
+        assertEquals(SynthResult.Failed("tts model failed to load: vi"), result)
+    }
+
+    private fun installedCore(engine: FakeTtsEngine): TtsCore {
+        markInstalled(temp.root, TtsCatalog.VI_VAIS1000)
+        return TtsCore(filesDir = temp.root, slot = TtsEngineSlot(factory = { _, _ -> engine }))
+    }
+
+    @Test
+    fun zeroSamplesIsFailed() {
+        val core = installedCore(FakeTtsEngine(chunksToEmit = emptyList()))
+        val result = core.synthesize("vi", "Xin chào", isCancelled = { false }) { _, _ -> }
+        assertEquals(SynthResult.Failed("tts produced no audio: vi"), result)
+    }
+
+    @Test
+    fun phonemizerUnavailableIsFailed() {
+        val core = installedCore(FakeTtsEngine(forcedResult = TtsEngine.PHONEMIZER_UNAVAILABLE))
+        val result = core.synthesize("vi", "Xin chào", isCancelled = { false }) { _, _ -> }
+        assertEquals(SynthResult.Failed("espeak phonemizer unavailable: vi"), result)
+    }
+
+    @Test
+    fun engineErrorIsFailed() {
+        val core = installedCore(FakeTtsEngine(forcedResult = TtsEngine.SYNTHESIS_FAILED))
+        val result = core.synthesize("vi", "Xin chào", isCancelled = { false }) { _, _ -> }
+        assertEquals(SynthResult.Failed("tts synthesis failed: vi"), result)
+    }
+
+    @Test
+    fun cancelledIsNotFailure() {
+        var chunks = 0
+        val core = installedCore(FakeTtsEngine())
+        val result = core.synthesize("vi", "Xin chào", isCancelled = { chunks >= 1 }) { _, _ -> chunks++ }
+        assertEquals(SynthResult.Cancelled, result)
+    }
+
+    @Test
+    fun cancelledWithNoAudioIsStillCancelled() {
+        val core = installedCore(FakeTtsEngine(chunksToEmit = emptyList()))
+        val result = core.synthesize("vi", "Xin chào", isCancelled = { true }) { _, _ -> }
+        assertEquals(SynthResult.Cancelled, result)
+    }
+
+    @Test
+    fun blankTextSkipsEngine() {
+        val engine = FakeTtsEngine()
+        val core = installedCore(engine)
+        val result = core.synthesize("vi", "  ", isCancelled = { false }) { _, _ -> }
+        assertEquals(SynthResult.Spoken, result)
+        assertEquals(0, engine.generateStreamCallCount)
     }
 
     @Test

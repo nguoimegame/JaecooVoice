@@ -10,7 +10,9 @@ import java.io.File
  */
 class TtsCore(
     private val filesDir: File,
-    private val slot: TtsEngineSlot = TtsEngineSlot(),
+    private val slot: TtsEngineSlot = TtsEngineSlot { model, dir ->
+        SherpaTtsEngine(model, dir, EspeakPhonemizer(EspeakData.dir(filesDir)))
+    },
     private val idleTimeoutMs: Long = DEFAULT_IDLE_TIMEOUT_MS,
     private val clock: () -> Long = { System.currentTimeMillis() }
 ) {
@@ -25,27 +27,44 @@ class TtsCore(
         return TtsModelStore.isInstalled(filesDir, model)
     }
 
+    /** How one [synthesize] call ended. */
+    sealed interface SynthResult {
+        data object Spoken : SynthResult
+        data object Cancelled : SynthResult
+
+        /** [reason] is logged by JaecooApp (docs/jaecoovoice-contract.md lists them). */
+        data class Failed(val reason: String) : SynthResult
+    }
+
     /**
      * Synthesizes [text] in [language] streaming chunks of PCM audio to [onChunk].
-     * Aborts promptly when [isCancelled] returns true.
+     * Aborts promptly when [isCancelled] returns true. Producing no audio at all is a failure.
      */
     @Synchronized
+    @Suppress("ReturnCount") // one early return for each way it cannot even start
     fun synthesize(
         language: String,
         text: String,
         isCancelled: () -> Boolean = { false },
         onChunk: (samples: FloatArray, sampleRate: Int) -> Unit
-    ): Boolean {
+    ): SynthResult {
         val model = TtsCatalog.forLanguage(language)
-        val installed = model != null && TtsModelStore.isInstalled(filesDir, model)
-        val engine = if (installed) slot.get(language, model!!, TtsModelStore.dir(filesDir, model)) else null
-        if (engine == null) {
-            return false
+        if (model == null || !TtsModelStore.isInstalled(filesDir, model)) {
+            return SynthResult.Failed("tts model not installed: $language")
         }
+        if (text.isBlank()) return SynthResult.Spoken
+        val engine = slot.get(language, model, TtsModelStore.dir(filesDir, model))
+            ?: return SynthResult.Failed("tts model failed to load: $language")
         lastUsedAt = clock()
-        val result = engine.generateStream(text, isCancelled = isCancelled, onChunk = onChunk)
+        val samples = engine.generateStream(text, isCancelled = isCancelled, onChunk = onChunk)
         lastUsedAt = clock()
-        return result
+        return when {
+            isCancelled() -> SynthResult.Cancelled
+            samples == TtsEngine.PHONEMIZER_UNAVAILABLE -> SynthResult.Failed("espeak phonemizer unavailable: ${model.espeakVoice}")
+            samples == TtsEngine.SYNTHESIS_FAILED -> SynthResult.Failed("tts synthesis failed: $language")
+            samples <= 0 -> SynthResult.Failed("tts produced no audio: $language")
+            else -> SynthResult.Spoken
+        }
     }
 
     /**

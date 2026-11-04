@@ -164,8 +164,7 @@ class VoiceEngineService : Service() {
             val model = TtsCatalog.forLanguage(lang)
             when {
                 txt.isBlank() -> safely { cb?.onDone() }
-                model == null -> safely { cb?.onError("Ngôn ngữ không được hỗ trợ: $lang") }
-                !TtsModelStore.isInstalled(filesDir, model) -> safely { cb?.onError("Chưa cài mô hình TTS cho $lang") }
+                model == null || !TtsModelStore.isInstalled(filesDir, model) -> speakFailed(cb, "tts model not installed: $lang")
                 else -> {
                     val genId = speechGeneration.incrementAndGet()
                     activeSpeakingGeneration.set(genId)
@@ -220,7 +219,7 @@ class VoiceEngineService : Service() {
             try {
                 val chunks = mutableListOf<FloatArray>()
                 var sampleRate = 0
-                val ok = ttsCore.synthesize(
+                val result = ttsCore.synthesize(
                     language = lang,
                     text = txt,
                     isCancelled = { speechGeneration.get() != genId }
@@ -229,17 +228,18 @@ class VoiceEngineService : Service() {
                     sampleRate = rate
                 }
 
-                if (!ok || speechGeneration.get() != genId) {
-                    if (!ok && speechGeneration.get() == genId) {
-                        safely { cb?.onError("Không thể nạp mô hình TTS cho $lang") }
-                    }
-                    return@execute
-                }
-
                 val totalSamples = chunks.sumOf { it.size }
-                if (totalSamples == 0 || sampleRate <= 0) {
-                    safely { cb?.onDone() }
-                    return@execute
+                when {
+                    // Cancelled (stopSpeaking or a newer speak/listen): say nothing more.
+                    speechGeneration.get() != genId || result == TtsCore.SynthResult.Cancelled -> return@execute
+                    result is TtsCore.SynthResult.Failed -> {
+                        speakFailed(cb, result.reason)
+                        return@execute
+                    }
+                    totalSamples == 0 -> {
+                        speakFailed(cb, "tts produced no audio: $lang")
+                        return@execute
+                    }
                 }
 
                 val samples = FloatArray(totalSamples)
@@ -270,6 +270,12 @@ class VoiceEngineService : Service() {
                 scheduleTtsRelease()
             }
         }
+    }
+
+    /** Every speak failure is logged here and reaches JaecooApp, which sends it to the log server. */
+    private fun speakFailed(cb: ITtsCallback?, reason: String) {
+        Log.w(TTS_TAG, reason)
+        safely { cb?.onError(reason) }
     }
 
     /** Engine is freed five minutes after the last listen; another listen pushes that back. */
@@ -315,6 +321,7 @@ class VoiceEngineService : Service() {
 
     private companion object {
         const val TAG = "VoiceEngineService"
+        const val TTS_TAG = "SherpaTtsEngine"
         const val API_VERSION = 2
         const val ENGINE_IDLE_MS = 5 * 60 * 1_000L
 

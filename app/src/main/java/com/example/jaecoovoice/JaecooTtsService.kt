@@ -6,6 +6,7 @@ import android.speech.tts.SynthesisRequest
 import android.speech.tts.TextToSpeech
 import android.speech.tts.TextToSpeechService
 import android.speech.tts.Voice
+import android.util.Log
 import com.example.jaecoovoice.engine.TtsCatalog
 import com.example.jaecoovoice.engine.TtsCore
 import java.util.Locale
@@ -62,7 +63,7 @@ class JaecooTtsService : TextToSpeechService() {
 
     private fun streamPcmToCallback(normLang: String, text: String, callback: SynthesisCallback) {
         val maxBuffer = callback.maxBufferSize.coerceAtLeast(MIN_BUFFER_SIZE)
-        val success = core.synthesize(
+        val result = core.synthesize(
             language = normLang,
             text = text,
             isCancelled = { stopRequested }
@@ -81,11 +82,18 @@ class JaecooTtsService : TextToSpeechService() {
             }
         }
 
-        if (!stopRequested) {
-            if (success) {
-                callback.done()
-            } else {
-                callback.error(TextToSpeech.ERROR_SYNTHESIS)
+        if (stopRequested) return
+        when (result) {
+            TtsCore.SynthResult.Spoken -> callback.done()
+            TtsCore.SynthResult.Cancelled -> Unit
+            is TtsCore.SynthResult.Failed -> {
+                Log.w(TAG, result.reason)
+                val code = if (result.reason.startsWith("tts model not installed")) {
+                    TextToSpeech.ERROR_NOT_INSTALLED_YET
+                } else {
+                    TextToSpeech.ERROR_SYNTHESIS
+                }
+                callback.error(code)
             }
         }
     }
@@ -122,6 +130,7 @@ class JaecooTtsService : TextToSpeechService() {
     companion object {
         private const val DEFAULT_SAMPLE_RATE = 22050
         private const val MIN_BUFFER_SIZE = 256
+        private const val TAG = "SherpaTtsEngine"
     }
 }
 
