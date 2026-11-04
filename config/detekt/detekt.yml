@@ -1,0 +1,10 @@
+# Only what differs from detekt's own defaults (the build passes --build-upon-default-config).
+
+style:
+  MagicNumber:
+    # Layout maths and car signal codes are full of fixed numbers that read
+    # better where they are used than as a constant three screens away.
+    active: false
+  MaxLineLength:
+    # ktlint owns formatting.
+    active: false

@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Only JaecooApp (same signing key) may bind VoiceEngineService. Declared here and in
+         JaecooApp, so whichever app is installed first still gets the permission. -->
+    <permission
+        android:name="com.example.jaecoovoice.permission.ENGINE"
+        android:protectionLevel="signature" />
+
+    <uses-permission android:name="com.example.jaecoovoice.permission.ENGINE" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Downloads speech models. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <queries>
+        <package android:name="com.example.jaecooapp" />
+    </queries>
+
+    <!-- No launcher activity: JaecooApp installs, configures and drives this app. -->
+    <application
+        android:allowBackup="false"
+        android:label="@string/app_name"
+        android:supportsRtl="true">
+
+        <!-- IVoiceEngine for JaecooApp (docs/jaecoovoice-contract.md). -->
+        <service
+            android:name=".VoiceEngineService"
+            android:exported="true"
+            android:permission="com.example.jaecoovoice.permission.ENGINE">
+            <intent-filter>
+                <action android:name="com.example.jaecoovoice.action.BIND_ENGINE" />
+            </intent-filter>
+        </service>
+
+        <!-- System speech recognizer for other apps (SpeechRecognizer). JaecooApp sets it as the
+             default in Settings.Secure.voice_recognition_service. -->
+        <service
+            android:name=".JaecooRecognitionService"
+            android:exported="true"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.speech.RecognitionService" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <meta-data
+                android:name="android.speech"
+                android:resource="@xml/recognition_service" />
+        </service>
+
+        <!-- RECOGNIZE_SPEECH for other apps. No MAIN/LAUNCHER: the app stays without an icon. -->
+        <activity
+            android:name=".RecognizeSpeechActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <!-- Standard Android TextToSpeechService for other apps. -->
+        <service
+            android:name=".JaecooTtsService"
+            android:exported="true"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.TTS_SERVICE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <meta-data
+                android:name="android.speech.tts"
+                android:resource="@xml/tts_engine" />
+        </service>
+
+        <!-- Responds to CHECK_TTS_DATA queries from the Android TTS framework. -->
+        <activity
+            android:name=".CheckTtsDataActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.speech.tts.engine.CHECK_TTS_DATA" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>

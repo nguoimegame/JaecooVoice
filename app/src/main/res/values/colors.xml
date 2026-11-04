@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Same palette as JaecooApp's voice overlay, so the two look alike. -->
+<resources>
+    <color name="voice_hud_background">#E60E1118</color>
+    <color name="voice_hud_text">#FFFFFF</color>
+    <color name="voice_hud_text_muted">#B3FFFFFF</color>
+    <color name="voice_wave_blue">#2F7CF6</color>
+    <color name="voice_wave_pink">#FF4E9B</color>
+    <color name="voice_wave_cyan">#2DE2E6</color>
+    <color name="voice_wave_purple">#9A5BFF</color>
+</resources>

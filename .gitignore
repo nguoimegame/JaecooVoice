@@ -1,0 +1,21 @@
+*.iml
+.gradle
+/local.properties
+local.properties
+/.idea/
+.DS_Store
+/build
+*/build
+/captures
+.externalNativeBuild
+.cxx
+.kotlin/
+signing.properties
+
+# sherpa-onnx AAR (downloaded by the downloadSherpaOnnx task, 49 MB)
+app/libs/
+.superpowers/
+
+# Signing keys never go into this public repository
+*.keystore
+*.jks

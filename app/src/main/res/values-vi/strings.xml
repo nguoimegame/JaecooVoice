@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="listening">Đang nghe…</string>
+    <string name="recognizing">Đang nhận dạng…</string>
+</resources>

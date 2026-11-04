@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Speech recognizer for other apps (JaecooRecognitionService); no settings screen. -->
+<recognition-service xmlns:android="http://schemas.android.com/apk/res/android" />

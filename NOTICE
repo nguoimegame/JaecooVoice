@@ -1,0 +1,29 @@
+JaecooVoice
+Copyright 2026 nguoimegame
+
+JaecooVoice is free software: you can redistribute it and/or modify it under the terms of
+the GNU General Public License as published by the Free Software Foundation, version 3
+(see LICENSE). Source code for every released APK:
+https://github.com/nguoimegame/JaecooVoice (the release tag matching the APK version).
+
+The APK links the following GPL-3.0 component into its own native library
+(libjaecoo-espeak.so), which makes the whole APK a GPL-3.0 work:
+
+- espeak-ng (https://github.com/espeak-ng/espeak-ng), in the fork used by piper-phonemize:
+  GNU General Public License v3.0 or later. Used only to convert text to IPA phonemes for
+  Piper TTS models; its espeak-ng-data comes inside the downloaded TTS model archives.
+
+This app bundles or downloads the following third-party components, each under the
+Apache License, Version 2.0 (https://www.apache.org/licenses/LICENSE-2.0):
+
+- sherpa-onnx (https://github.com/k2-fsa/sherpa-onnx), including the ONNX Runtime
+  native library it ships with (MIT License, https://github.com/microsoft/onnxruntime).
+- Speech models, downloaded at run time from the sherpa-onnx releases:
+  - zipformer vi 30M, zipformer small en (k2-fsa), zipformer ru (alphacep/vosk-model-ru):
+    Apache License 2.0.
+  - Omnilingual ASR 300M CTC (Meta Platforms): Apache License 2.0.
+  - NeMo FastConformer transducers for es and fr (NVIDIA): upstream license to be confirmed,
+    NVIDIA publishes most NeMo ASR models under CC-BY-4.0 and some under CC-BY-NC-4.0.
+  - SenseVoice zh (FunAudioLLM / Alibaba FunASR): "FunASR Model Open Source License",
+    https://github.com/modelscope/FunASR/blob/main/MODEL_LICENSE
+- Apache Commons Compress (https://commons.apache.org/proper/commons-compress/).

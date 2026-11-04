@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A dark translucent pill, like JaecooApp's voice overlay. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/voice_hud_background" />
+    <corners android:radius="@dimen/hud_radius" />
+</shape>

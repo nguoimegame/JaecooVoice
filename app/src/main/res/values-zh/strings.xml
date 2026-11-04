@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="listening">正在聆听…</string>
+    <string name="recognizing">正在识别…</string>
+</resources>

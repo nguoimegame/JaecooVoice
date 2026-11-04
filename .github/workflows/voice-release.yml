@@ -1,0 +1,152 @@
+# Builds, checks and publishes JaecooVoice for every tag vX.Y.Z (or by hand). JaecooApp installs
+# and updates JaecooVoice from its own server, so the APK goes into the JaecooApp repository:
+#   server/public/apks/jaecoo-voice.apk  (Git LFS)
+#   server/src/data/voice.json            (served as /api/voice.json; the site adds sha256)
+# on the branch of the chosen channel (beta -> https://japp.cloud/beta/, main -> https://japp.cloud/).
+#
+# Needs the repository secret JAECOOAPP_TOKEN: a fine-grained token on nguoimegame/JaecooApp
+# with Contents: write and Actions: write.
+# And JAECOO_KEYSTORE_B64: JaecooApp's app/debug.keystore in base64 (`base64 -w0 debug.keystore`).
+# The key is never committed to this public repository.
+
+name: JaecooVoice release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version tag, e.g. v1.0.0'
+        required: true
+        type: string
+      channel:
+        description: 'JaecooApp server channel'
+        required: true
+        default: beta
+        type: choice
+        options:
+          - beta
+          - main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: voice-release
+  cancel-in-progress: false
+
+env:
+  # SHA-256 of JaecooApp's signing certificate. JaecooApp refuses a JaecooVoice signed with
+  # anything else, so such a build is never published.
+  EXPECTED_CERT_SHA256: 139f1d19f55e5f9b6cb5bd510df1e1266128463e41da59ef4540295178dab85a
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve version and channel
+        id: version
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          CHANNEL="${{ github.event.inputs.channel || 'beta' }}"
+          if ! [[ "$TAG" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "::error::Tag '$TAG' is not vMAJOR.MINOR.PATCH"
+            exit 1
+          fi
+          MAJOR=${BASH_REMATCH[1]}; MINOR=${BASH_REMATCH[2]}; PATCH=${BASH_REMATCH[3]}
+          if (( MINOR > 99 || PATCH > 99 )); then
+            echo "::error::Minor and patch must be below 100 to keep versionCode increasing"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "name=$MAJOR.$MINOR.$PATCH" >> "$GITHUB_OUTPUT"
+          echo "code=$(( MAJOR * 10000 + MINOR * 100 + PATCH ))" >> "$GITHUB_OUTPUT"
+          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Restore the signing key
+        env:
+          JAECOO_KEYSTORE_B64: ${{ secrets.JAECOO_KEYSTORE_B64 }}
+        run: |
+          if [ -z "$JAECOO_KEYSTORE_B64" ]; then
+            echo "::error::Secret JAECOO_KEYSTORE_B64 is missing"
+            exit 1
+          fi
+          echo "$JAECOO_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/jaecoo.keystore"
+          echo "JAECOO_KEYSTORE=$RUNNER_TEMP/jaecoo.keystore" >> "$GITHUB_ENV"
+
+      - name: Check and build
+        run: >
+          ./gradlew check assembleRelease
+          -PvoiceVersionName=${{ steps.version.outputs.name }}
+          -PvoiceVersionCode=${{ steps.version.outputs.code }}
+
+      - name: Verify the signing certificate
+        run: |
+          APK=app/build/outputs/apk/release/app-release.apk
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n 1)
+          ACTUAL=$("$APKSIGNER" verify --print-certs "$APK" | grep -m1 'SHA-256 digest' | awk '{print $NF}')
+          if [ "$ACTUAL" != "$EXPECTED_CERT_SHA256" ]; then
+            echo "::error::APK is signed with $ACTUAL, expected JaecooApp's key"
+            exit 1
+          fi
+          cp "$APK" jaecoo-voice.apk
+
+      - name: Checkout JaecooApp
+        uses: actions/checkout@v4
+        with:
+          repository: nguoimegame/JaecooApp
+          ref: ${{ steps.version.outputs.channel }}
+          token: ${{ secrets.JAECOOAPP_TOKEN }}
+          lfs: true
+          path: jaecooapp
+
+      - name: Put the APK on the JaecooApp server
+        working-directory: jaecooapp
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          NAME: ${{ steps.version.outputs.name }}
+          CODE: ${{ steps.version.outputs.code }}
+          CHANNEL: ${{ steps.version.outputs.channel }}
+        run: |
+          cp ../jaecoo-voice.apk server/public/apks/jaecoo-voice.apk
+          SIZE=$(stat -c%s server/public/apks/jaecoo-voice.apk)
+          SIZE_MB=$(awk "BEGIN { printf \"%.1f MB\", $SIZE / 1048576 }")
+          jq --argjson code "$CODE" --arg name "$NAME" --arg date "$(date -u +%Y-%m-%d)" --arg size "$SIZE_MB" \
+            '.versionCode = $code | .versionName = $name | .releaseDate = $date | .fileSize = $size' \
+            server/src/data/voice.json > voice.json.tmp
+          mv voice.json.tmp server/src/data/voice.json
+          cat server/src/data/voice.json
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add server/public/apks/jaecoo-voice.apk server/src/data/voice.json
+          git commit -m "chore(voice-release): $TAG"
+          git push origin "HEAD:$CHANNEL"
+
+      - name: Deploy the JaecooApp site
+        env:
+          GH_TOKEN: ${{ secrets.JAECOOAPP_TOKEN }}
+        # Always main: that one workflow builds both the main and the beta site.
+        run: gh workflow run deploy-server.yml --ref main -R nguoimegame/JaecooApp
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: JaecooVoice ${{ steps.version.outputs.tag }}
+          generate_release_notes: true
+          files: jaecoo-voice.apk

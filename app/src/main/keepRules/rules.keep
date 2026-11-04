@@ -1,0 +1,4 @@
+# sherpa-onnx: native code reads fields of the config classes (FeatureConfig, OfflineRecognizerConfig…)
+# by name through JNI GetFieldID and calls back into Kotlin. If R8 renames them, loading a model fails
+# with "Failed to get field ID".
+-keep class com.k2fsa.sherpa.onnx.** { *; }

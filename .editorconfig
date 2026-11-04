@@ -1,0 +1,12 @@
+root = true
+
+[*.{kt,kts}]
+# gradle.properties sets kotlin.code.style=official; this is ktlint's name for it.
+ktlint_code_style = intellij_idea
+
+# Match how the code is already written, so ktlint flags new code that drifts
+# from the house style rather than the house style itself.
+ij_kotlin_allow_trailing_comma = false
+ij_kotlin_allow_trailing_comma_on_call_site = false
+ktlint_standard_blank-line-between-when-conditions = disabled
+ktlint_standard_function-expression-body = disabled
