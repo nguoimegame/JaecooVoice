@@ -1,5 +1,14 @@
 package com.example.jaecoovoice.engine
 
+/** How text becomes model tokens. */
+enum class TtsFrontend {
+    /** Piper: JaecooVoice phonemizes with espeak-ng (EspeakPhonemizer) and passes codepoints. */
+    ESPEAK,
+
+    /** sherpa-onnx turns the text into tokens itself (lexicon, or characters for MMS). */
+    TEXT
+}
+
 /**
  * One downloadable TTS model: a `.tar.bz2` archive containing ONNX model files,
  * tokens, and optional espeak-ng-data or lexicon files.
@@ -17,7 +26,10 @@ data class TtsModel(
     val lexiconFile: String? = null,
     val ruleFsts: String? = null,
     val sampleRate: Int = 22050,
-    val sha256: String = ""
+    val sha256: String = "",
+    val frontend: TtsFrontend = TtsFrontend.ESPEAK,
+    /** espeak-ng voice for [TtsFrontend.ESPEAK]; "" for [TtsFrontend.TEXT]. */
+    val espeakVoice: String = ""
 )
 
 /**
@@ -38,7 +50,8 @@ object TtsCatalog {
         modelFile = "vi_VN-vais1000-medium.onnx",
         tokensFile = "tokens.txt",
         dataDir = "espeak-ng-data",
-        sampleRate = 22050
+        sampleRate = 22050,
+        espeakVoice = "vi"
     )
 
     val EN_LESSAC = TtsModel(
@@ -51,7 +64,8 @@ object TtsCatalog {
         modelFile = "en_US-lessac-medium.onnx",
         tokensFile = "tokens.txt",
         dataDir = "espeak-ng-data",
-        sampleRate = 22050
+        sampleRate = 22050,
+        espeakVoice = "en-us"
     )
 
     val RU_DMITRI = TtsModel(
@@ -64,7 +78,8 @@ object TtsCatalog {
         modelFile = "ru_RU-dmitri-medium.onnx",
         tokensFile = "tokens.txt",
         dataDir = "espeak-ng-data",
-        sampleRate = 22050
+        sampleRate = 22050,
+        espeakVoice = "ru"
     )
 
     val ES_SHARVARD = TtsModel(
@@ -77,7 +92,8 @@ object TtsCatalog {
         modelFile = "es_ES-sharvard-medium.onnx",
         tokensFile = "tokens.txt",
         dataDir = "espeak-ng-data",
-        sampleRate = 22050
+        sampleRate = 22050,
+        espeakVoice = "es"
     )
 
     val FR_SIWIS = TtsModel(
@@ -90,7 +106,8 @@ object TtsCatalog {
         modelFile = "fr_FR-siwis-medium.onnx",
         tokensFile = "tokens.txt",
         dataDir = "espeak-ng-data",
-        sampleRate = 22050
+        sampleRate = 22050,
+        espeakVoice = "fr-fr"
     )
 
     val ZH_AISHELL3 = TtsModel(
@@ -105,7 +122,8 @@ object TtsCatalog {
         dataDir = null,
         lexiconFile = "lexicon.txt",
         ruleFsts = "date.fst,number.fst,phone.fst",
-        sampleRate = 22050
+        sampleRate = 22050,
+        frontend = TtsFrontend.TEXT
     )
 
     val AR_KAREEM = TtsModel(
@@ -118,7 +136,8 @@ object TtsCatalog {
         modelFile = "ar_JO-kareem-low.onnx",
         tokensFile = "tokens.txt",
         dataDir = "espeak-ng-data",
-        sampleRate = 16000
+        sampleRate = 16000,
+        espeakVoice = "ar"
     )
 
     val PT_FABER = TtsModel(
@@ -131,7 +150,8 @@ object TtsCatalog {
         modelFile = "pt_BR-faber-medium.onnx",
         tokensFile = "tokens.txt",
         dataDir = "espeak-ng-data",
-        sampleRate = 22050
+        sampleRate = 22050,
+        espeakVoice = "pt-br"
     )
 
     val TH_MMS = TtsModel(
@@ -144,7 +164,8 @@ object TtsCatalog {
         modelFile = "model.onnx",
         tokensFile = "tokens.txt",
         dataDir = null,
-        sampleRate = 16000
+        sampleRate = 16000,
+        frontend = TtsFrontend.TEXT
     )
 
     val ID_NEWS = TtsModel(
@@ -157,7 +178,8 @@ object TtsCatalog {
         modelFile = "id_ID-news_tts-medium.onnx",
         tokensFile = "tokens.txt",
         dataDir = "espeak-ng-data",
-        sampleRate = 22050
+        sampleRate = 22050,
+        espeakVoice = "id"
     )
 
     val KK_ISEKE = TtsModel(
@@ -170,7 +192,8 @@ object TtsCatalog {
         modelFile = "kk_KZ-iseke-x_low.onnx",
         tokensFile = "tokens.txt",
         dataDir = "espeak-ng-data",
-        sampleRate = 16000
+        sampleRate = 16000,
+        espeakVoice = "kk"
     )
 
     val all: List<TtsModel> = listOf(

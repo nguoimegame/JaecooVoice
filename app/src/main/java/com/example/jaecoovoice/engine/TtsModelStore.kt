@@ -29,13 +29,22 @@ object TtsModelStore {
 
     fun dir(filesDir: File, model: TtsModel): File = File(File(File(filesDir, "tts_models"), model.language), model.id)
 
+    /** The espeak-ng-data shared by every Piper model (see [EspeakData]). */
+    fun sharedEspeakDataDir(filesDir: File): File = EspeakData.dir(filesDir)
+
+    /**
+     * True when [model]'s files are complete. A Piper model also needs the shared espeak-ng-data;
+     * a copy left in the model folder by JaecooVoice 1.3.x is moved there first.
+     */
     fun isInstalled(filesDir: File, model: TtsModel): Boolean {
         val target = dir(filesDir, model)
         val modelOk = File(target, model.modelFile).length() > 0L
         val tokensOk = File(target, model.tokensFile).length() > 0L
-        val dataDirOk = model.dataDir == null || File(target, model.dataDir).exists()
         val lexiconOk = model.lexiconFile == null || File(target, model.lexiconFile).length() > 0L
-        return modelOk && tokensOk && dataDirOk && lexiconOk
+        val filesOk = modelOk && tokensOk && lexiconOk
+        if (!filesOk || model.frontend != TtsFrontend.ESPEAK) return filesOk
+        EspeakData.adopt(model, filesDir, target)
+        return EspeakData.isPresent(sharedEspeakDataDir(filesDir))
     }
 
     fun delete(filesDir: File, model: TtsModel) {
@@ -71,9 +80,11 @@ object TtsModelStore {
             val modelOk = File(staging, model.modelFile).length() > 0L
             val tokensOk = File(staging, model.tokensFile).length() > 0L
             check(modelOk && tokensOk) { "Gói tải về thiếu file mô hình TTS" }
+            EspeakData.checkArchive(model, filesDir, staging)
             val target = dir(filesDir, model)
             target.deleteRecursively()
             check(staging.renameTo(target)) { "Không đổi tên được thư mục mô hình TTS" }
+            EspeakData.adopt(model, filesDir, target)
             onProgress(PERCENT)
             InstallResult.Success
         } catch (e: IOException) {

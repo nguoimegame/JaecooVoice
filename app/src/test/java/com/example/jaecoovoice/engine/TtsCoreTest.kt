@@ -52,7 +52,9 @@ class TtsCoreTest {
         val dir = TtsModelStore.dir(filesDir, model).apply { mkdirs() }
         File(dir, model.modelFile).writeText("onnx")
         File(dir, model.tokensFile).writeText("tokens")
-        model.dataDir?.let { File(dir, it).mkdirs() }
+        if (model.frontend == TtsFrontend.ESPEAK) {
+            File(TtsModelStore.sharedEspeakDataDir(filesDir).apply { mkdirs() }, "phontab").writeText("p")
+        }
         model.lexiconFile?.let { File(dir, it).writeText("lexicon") }
         return dir
     }

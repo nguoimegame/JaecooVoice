@@ -65,6 +65,35 @@ class TtsCatalogTest {
     }
 
     @Test
+    fun espeakVoices() {
+        val expected = mapOf(
+            "vi" to "vi",
+            "en" to "en-us",
+            "ru" to "ru",
+            "es" to "es",
+            "fr" to "fr-fr",
+            "ar" to "ar",
+            "pt" to "pt-br",
+            "id" to "id",
+            "kk" to "kk",
+            "zh" to "",
+            "th" to ""
+        )
+        assertEquals(expectedLanguages.toSet(), expected.keys)
+        for ((lang, voice) in expected) {
+            assertEquals("espeak voice of $lang", voice, TtsCatalog.forLanguage(lang)?.espeakVoice)
+        }
+    }
+
+    @Test
+    fun textFrontendModels() {
+        for (model in TtsCatalog.all) {
+            val text = model.language == "zh" || model.language == "th"
+            assertEquals(model.language, if (text) TtsFrontend.TEXT else TtsFrontend.ESPEAK, model.frontend)
+        }
+    }
+
+    @Test
     fun chineseModelSpecifiesLexicon() {
         val zh = TtsCatalog.forLanguage("zh")
         assertNotNull(zh)

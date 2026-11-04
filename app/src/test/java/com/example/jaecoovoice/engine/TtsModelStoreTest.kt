@@ -100,7 +100,7 @@ class TtsModelStoreTest {
         File(dir, "tokens.txt").writeText("tokens")
         assertFalse(TtsModelStore.isInstalled(filesDir, testModel))
 
-        File(dir, "espeak-ng-data").mkdirs()
+        File(TtsModelStore.sharedEspeakDataDir(filesDir).apply { mkdirs() }, "phontab").writeText("p")
         assertTrue(TtsModelStore.isInstalled(filesDir, testModel))
     }
 
@@ -110,7 +110,7 @@ class TtsModelStoreTest {
         val tar = archive(
             "test-root/model.onnx" to "onnx-bytes",
             "test-root/tokens.txt" to "tokens-bytes",
-            "test-root/espeak-ng-data/data" to "espeak-data"
+            "test-root/espeak-ng-data/phontab" to "espeak-data"
         )
         val goodModel = testModel.copy(sha256 = sha256(tar))
         val progressList = mutableListOf<Int>()
@@ -136,5 +136,87 @@ class TtsModelStoreTest {
 
         TtsModelStore.delete(filesDir, testModel)
         assertFalse(dir.exists())
+    }
+
+    private fun installArchive(filesDir: File, model: TtsModel, phontab: String): TtsModelStore.InstallResult {
+        val tar = archive(
+            "${model.archiveRoot}/${model.modelFile}" to "onnx",
+            "${model.archiveRoot}/${model.tokensFile}" to "tokens",
+            "${model.archiveRoot}/espeak-ng-data/phontab" to phontab,
+            "${model.archiveRoot}/espeak-ng-data/lang/vi" to "vi-lang"
+        )
+        return TtsModelStore.install(filesDir, model, onProgress = {}, open = { ByteArrayInputStream(tar) })
+    }
+
+    @Test
+    fun installMovesEspeakDataToSharedDir() {
+        val filesDir = temp.root
+        assertEquals(TtsModelStore.InstallResult.Success, installArchive(filesDir, testModel, "first"))
+
+        val shared = TtsModelStore.sharedEspeakDataDir(filesDir)
+        assertEquals(File(filesDir, "espeak-ng-data"), shared)
+        assertEquals("first", File(shared, "phontab").readText())
+        assertEquals("vi-lang", File(shared, "lang/vi").readText())
+        assertFalse(File(TtsModelStore.dir(filesDir, testModel), "espeak-ng-data").exists())
+        assertTrue(TtsModelStore.isInstalled(filesDir, testModel))
+    }
+
+    @Test
+    fun secondInstallDropsItsCopy() {
+        val filesDir = temp.root
+        val second = testModel.copy(id = "test-tts-en", language = "en", archiveRoot = "root-en")
+        installArchive(filesDir, testModel, "first")
+        assertEquals(TtsModelStore.InstallResult.Success, installArchive(filesDir, second, "second"))
+
+        assertEquals("first", File(TtsModelStore.sharedEspeakDataDir(filesDir), "phontab").readText())
+        assertFalse(File(TtsModelStore.dir(filesDir, second), "espeak-ng-data").exists())
+        assertTrue(TtsModelStore.isInstalled(filesDir, second))
+    }
+
+    @Test
+    fun espeakModelWithoutDataIsNotInstalled() {
+        val filesDir = temp.root
+        val dir = TtsModelStore.dir(filesDir, testModel).apply { mkdirs() }
+        File(dir, "model.onnx").writeText("model")
+        File(dir, "tokens.txt").writeText("tokens")
+
+        assertFalse(TtsModelStore.isInstalled(filesDir, testModel))
+    }
+
+    @Test
+    fun legacyModelDataIsMigrated() {
+        // Installed by JaecooVoice 1.3.x: espeak-ng-data inside the model folder, no shared copy.
+        val filesDir = temp.root
+        val dir = TtsModelStore.dir(filesDir, testModel).apply { mkdirs() }
+        File(dir, "model.onnx").writeText("model")
+        File(dir, "tokens.txt").writeText("tokens")
+        File(File(dir, "espeak-ng-data").apply { mkdirs() }, "phontab").writeText("legacy")
+
+        assertTrue(TtsModelStore.isInstalled(filesDir, testModel))
+        assertEquals("legacy", File(TtsModelStore.sharedEspeakDataDir(filesDir), "phontab").readText())
+        assertFalse(File(dir, "espeak-ng-data").exists())
+    }
+
+    @Test
+    fun deletingModelKeepsSharedEspeakData() {
+        val filesDir = temp.root
+        installArchive(filesDir, testModel, "first")
+
+        TtsModelStore.delete(filesDir, testModel)
+
+        assertFalse(TtsModelStore.dir(filesDir, testModel).exists())
+        assertEquals("first", File(TtsModelStore.sharedEspeakDataDir(filesDir), "phontab").readText())
+    }
+
+    @Test
+    fun textModelDoesNotNeedEspeakData() {
+        val filesDir = temp.root
+        val zh = TtsCatalog.ZH_AISHELL3
+        val dir = TtsModelStore.dir(filesDir, zh).apply { mkdirs() }
+        File(dir, zh.modelFile).writeText("model")
+        File(dir, zh.tokensFile).writeText("tokens")
+        File(dir, zh.lexiconFile!!).writeText("lexicon")
+
+        assertTrue(TtsModelStore.isInstalled(filesDir, zh))
     }
 }
