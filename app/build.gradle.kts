@@ -76,6 +76,16 @@ android {
         }
     }
 
+    // libjaecoo-espeak.so: espeak-ng phonemizer for Piper TTS (src/main/cpp, GPL-3.0). Built for
+    // every ABI in abiFilters. espeak-ng is a git submodule: clone with --recurse-submodules.
+    ndkVersion = "27.0.12077973"
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
+
     buildFeatures {
         // The contract with JaecooApp (src/main/aidl, docs/jaecoovoice-contract.md).
         aidl = true

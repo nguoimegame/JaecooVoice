@@ -48,6 +48,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # espeak-ng (app/src/main/cpp/third_party/espeak-ng) for libjaecoo-espeak.so.
+          submodules: recursive
 
       - name: Resolve version and channel
         id: version

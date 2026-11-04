@@ -1,0 +1,52 @@
+[
+  {
+    "voice": "vi",
+    "text": "Vị trí hiện tại: Trời quang đãng, 25 độ C, cảm giác 32 độ C",
+    "sentences": [
+      "vˈi6 tʃˈiɜ hˈiɛ6n t̪ˈaː6j: tʃˈəː2j kwˈaːŋ ɗˈaː5ŋ, hˈaːɪ mˈyə7j lˈa7m ɗˈo6 sˈe, kˈaː4m zˈaːɜc bˈaː mˈyə7jhˈaːɪ ɗˈo6 sˈe"
+    ]
+  },
+  {
+    "voice": "vi",
+    "text": "Không nghe thấy gì. Hãy nói lại rõ hơn",
+    "sentences": [
+      "xˌoŋ ŋˈɛ tˈəɪɜ zˈi2.",
+      "hˈa5j nˈɔɜj lˈaː6j zˈɔ5 hˈəːn"
+    ]
+  },
+  {
+    "voice": "vi",
+    "text": "Tôi đang nghe đây!",
+    "sentences": [
+      "t̪ˈoj ɗˌaːŋ ŋˈɛ ɗˈəɪ!"
+    ]
+  },
+  {
+    "voice": "vi",
+    "text": "Bạn có muốn mở bản đồ không?",
+    "sentences": [
+      "bˈaː6n kˈɔɜ mˈuəɜn mˈəː4 bˈaː4n ɗˈo2 xˌoŋ?"
+    ]
+  },
+  {
+    "voice": "vi",
+    "text": "Mở Spotify",
+    "sentences": [
+      "mˈəː4 spˈɒtɪfˌaɪ"
+    ]
+  },
+  {
+    "voice": "vi",
+    "text": "Thiếu quyền micro; thử lại sau",
+    "sentences": [
+      "tˈiɛɜw kwˈiɛ2n mˈaɪkɹəʊ; tˈy4 lˈaː6j sˈaw"
+    ]
+  },
+  {
+    "voice": "en-us",
+    "text": "Hello, how are you?",
+    "sentences": [
+      "həlˈoʊ, hˈaʊ ɑːɹ juː?"
+    ]
+  }
+]

@@ -2,3 +2,6 @@
 # by name through JNI GetFieldID and calls back into Kotlin. If R8 renames them, loading a model fails
 # with "Failed to get field ID".
 -keep class com.k2fsa.sherpa.onnx.** { *; }
+
+# libjaecoo-espeak.so binds Java_com_example_jaecoovoice_engine_EspeakNative_* by name.
+-keep class com.example.jaecoovoice.engine.EspeakNative { native <methods>; }
