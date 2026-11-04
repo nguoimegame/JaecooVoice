@@ -19,7 +19,6 @@ import java.util.concurrent.TimeUnit
  * Runs the native espeak-ng phonemizer against golden phonemes written by
  * `tools/phonemes/make_golden.py` (piper_phonemize, the phonemizer Piper models were trained with).
  * The test APK carries a trimmed espeak-ng-data (vi + en) from the vi Piper model archive.
- * The golden comparison itself (`goldenSentencesMatch`) comes with PiperPhonemes.sentences (Task 2).
  */
 @RunWith(AndroidJUnit4::class)
 class EspeakPhonemizerTest {
@@ -52,6 +51,16 @@ class EspeakPhonemizerTest {
             assertNotNull("null for ${g.voice}: ${g.text}", clauses)
             assertTrue("no clauses for ${g.voice}: ${g.text}", clauses!!.isNotEmpty())
             android.util.Log.i("EspeakPhonemizerTest", "${g.voice} ${g.text} -> $clauses")
+        }
+    }
+
+    @Test
+    fun goldenSentencesMatch() {
+        val phonemizer = EspeakPhonemizer(dataDir)
+        for (g in golden) {
+            val clauses = phonemizer.clauses(g.text, g.voice)
+            assertNotNull("null for ${g.voice}: ${g.text}", clauses)
+            assertEquals("${g.voice}: ${g.text}", g.sentences, PiperPhonemes.sentences(clauses!!, g.voice))
         }
     }
 
