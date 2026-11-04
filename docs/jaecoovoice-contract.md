@@ -115,8 +115,8 @@ oneway interface ITtsCallback {
 - Engine nạp lười, chỉ giữ engine của một ngôn ngữ, thả sau 5 phút không dùng.
 - **Danh mục model nằm cứng trong JaecooVoice.** Thêm ngôn ngữ thì phát hành bản JaecooVoice mới, không đổi hợp đồng.
 - **TTS (Text-To-Speech):**
-  - `speak(text, language, cb)`: tổng hợp và phát âm thanh phản hồi qua AudioTrack offline bằng model VITS/Piper của sherpa-onnx. Khi bắt đầu phát, engine gọi `cb.onStart()`, phát xong gọi `cb.onDone()`. Nếu lỗi gọi `cb.onError(message)`.
-  - Audio Focus: Khi phát âm, engine xin quyền `AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK` stream `USAGE_ASSISTANCE_NAVIGATION_GUIDANCE` để hạ âm lượng nhạc nền xe hơi; phát xong hoặc bị dừng thì nhả Audio Focus.
+  - `speak(text, language, cb)`: tổng hợp và phát âm thanh phản hồi qua AudioTrack offline bằng model VITS/Piper của sherpa-onnx. Khi bắt đầu phát, engine gọi `cb.onStart()`, phát xong gọi `cb.onDone()`. Nếu lỗi gọi `cb.onError(message)`. Tổng hợp không ra mẫu âm thanh nào cũng là lỗi: engine gọi `cb.onError` với một trong các lý do `tts model not installed: <lang>`, `tts model failed to load: <lang>`, `espeak phonemizer unavailable: <voice>`, `tts synthesis failed: <lang>`, `tts produced no audio: <lang>`. Bị ngắt (`stopSpeaking`, lượt `speak`/`listen` mới) thì không gọi gì thêm. Model Piper được phiên âm bằng espeak-ng của JaecooVoice (`filesDir/espeak-ng-data`, dùng chung cho mọi model Piper), không qua `dataDir` của sherpa-onnx.
+  - Audio Focus: Khi phát âm, engine xin quyền `AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK` stream `USAGE_ASSISTANT` để hạ âm lượng nhạc nền xe hơi; phát xong hoặc bị dừng thì nhả Audio Focus.
   - `stopSpeaking()`: ngắt lời phát âm lập tức (< 20ms) và nhả Audio Focus.
   - `isSpeaking()`: trả về true nếu đang trong quá trình phát âm.
 - **Đổi phiên bản:** `apiVersion()` hiện là `2`. Khi thêm hàm hay đổi nghĩa thì tăng số, bên gọi kiểm tra trước khi dùng. JaecooApp gặp bản thấp hơn bản nó cần thì coi như JaecooVoice quá cũ và đề nghị cập nhật.
