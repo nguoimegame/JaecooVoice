@@ -7,6 +7,12 @@ import org.junit.Test
 
 class TtsPlayerTest {
 
+    @Test
+    fun `float samples become clipped 16-bit pcm`() {
+        val pcm = AndroidTrackPlayer.toPcm16(floatArrayOf(0f, 1f, -1f, 0.5f, 2f, -3f))
+        assertEquals(listOf<Short>(0, 32767, -32767, 16383, 32767, -32767), pcm.toList())
+    }
+
     private class FakeFocusController : AudioFocusController {
         var focusRequested = 0
         var focusAbandoned = 0

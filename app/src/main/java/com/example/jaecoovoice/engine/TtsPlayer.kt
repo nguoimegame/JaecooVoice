@@ -72,24 +72,30 @@ interface TrackPlayer {
 }
 
 /**
- * Android [AudioTrack] player streaming float PCM samples.
+ * Android [AudioTrack] player. Plays 16-bit PCM with USAGE_ASSISTANT, the way the J7's own iFlytek
+ * TTS does (a float track was not heard on the car).
+ * A track that cannot start or write throws, so the caller hears about it.
  */
 class AndroidTrackPlayer : TrackPlayer {
     @Volatile
     private var currentTrack: AudioTrack? = null
 
     override fun play(samples: FloatArray, sampleRate: Int, isCancelled: () -> Boolean) {
+        val pcm = toPcm16(samples)
         val minBufferSize = AudioTrack.getMinBufferSize(
             sampleRate,
             AudioFormat.CHANNEL_OUT_MONO,
-            AudioFormat.ENCODING_PCM_FLOAT
+            AudioFormat.ENCODING_PCM_16BIT
         )
-        val track = buildTrack(sampleRate, maxOf(minBufferSize, DEFAULT_BUFFER_SIZE))
+        check(minBufferSize > 0) { "AudioTrack does not take $sampleRate Hz (getMinBufferSize=$minBufferSize)" }
+        val track = buildTrack(sampleRate, maxOf(minBufferSize * BUFFER_FACTOR, DEFAULT_BUFFER_SIZE))
         currentTrack = track
         try {
+            check(track.state == AudioTrack.STATE_INITIALIZED) { "AudioTrack not initialized" }
             track.play()
-            writeSamples(track, samples, isCancelled)
-            drainTrack(track, samples.size, sampleRate, isCancelled)
+            check(track.playState == AudioTrack.PLAYSTATE_PLAYING) { "AudioTrack did not start (playState=${track.playState})" }
+            writeSamples(track, pcm, isCancelled)
+            drainTrack(track, pcm.size, sampleRate, isCancelled)
         } finally {
             releaseTrack(track)
             if (currentTrack === track) {
@@ -104,7 +110,7 @@ class AndroidTrackPlayer : TrackPlayer {
             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
             .build()
         val format = AudioFormat.Builder()
-            .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
+            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
             .setSampleRate(sampleRate)
             .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
             .build()
@@ -116,11 +122,13 @@ class AndroidTrackPlayer : TrackPlayer {
             .build()
     }
 
-    private fun writeSamples(track: AudioTrack, samples: FloatArray, isCancelled: () -> Boolean) {
+    private fun writeSamples(track: AudioTrack, samples: ShortArray, isCancelled: () -> Boolean) {
         var offset = 0
         while (offset < samples.size && !isCancelled()) {
             val size = minOf(CHUNK_SIZE, samples.size - offset)
             val written = track.write(samples, offset, size, AudioTrack.WRITE_BLOCKING)
+            // A stopped track (stop()) writes 0; anything negative is an error code.
+            if (written < 0 && !isCancelled()) error("AudioTrack.write failed: $written")
             if (written <= 0) break
             offset += written
         }
@@ -168,11 +176,17 @@ class AndroidTrackPlayer : TrackPlayer {
         }
     }
 
-    private companion object {
-        const val DEFAULT_BUFFER_SIZE = 4096
-        const val CHUNK_SIZE = 1024
-        const val DRAIN_POLL_MS = 10L
-        const val DRAIN_PADDING_MS = 250L
+    companion object {
+        /** Model output (-1..1) as 16-bit PCM, clipped. */
+        fun toPcm16(samples: FloatArray): ShortArray = ShortArray(samples.size) { i ->
+            (samples[i].coerceIn(-1f, 1f) * Short.MAX_VALUE).toInt().toShort()
+        }
+
+        private const val BUFFER_FACTOR = 3
+        private const val DEFAULT_BUFFER_SIZE = 4096
+        private const val CHUNK_SIZE = 1024
+        private const val DRAIN_POLL_MS = 10L
+        private const val DRAIN_PADDING_MS = 250L
     }
 }
 
@@ -211,7 +225,8 @@ class TtsPlayer(
             isPlaying = true
         }
         try {
-            focusController.requestFocus()
+            // The car may mute a stream that has no focus; play anyway, but leave a trace.
+            if (!focusController.requestFocus()) Log.w(TAG, "audio focus not granted, playing anyway")
             if (cancelled || isCancelled()) return
             onStart()
             trackPlayer.play(samples, sampleRate) { cancelled || isCancelled() }
@@ -240,6 +255,8 @@ class TtsPlayer(
     }
 
     companion object {
+        private const val TAG = "TtsPlayer"
+
         fun create(context: Context): TtsPlayer {
             val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
             return TtsPlayer(AndroidAudioFocusController(audioManager))
