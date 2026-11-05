@@ -70,11 +70,33 @@ object CrashTrace {
         info?.let { reported.writeText(it.timestamp.toString()) }
         return info?.takeIf { it.reason !in BENIGN }?.let {
             "reason=${reasonName(it.reason)} status=${it.status} rssKb=${it.rss / KB} " +
-                "importance=${it.importance} desc=${it.description.orEmpty()}"
+                "importance=${it.importance} desc=${it.description.orEmpty()}" + tombstoneText(it)
         }
     }
 
+    /**
+     * The readable strings of a native crash's tombstone (abort message, library and function
+     * names), which place a crash that has no Java stack. Empty when there is none.
+     */
+    @RequiresApi(Build.VERSION_CODES.R)
+    @Suppress("TooGenericExceptionCaught", "SwallowedException")
+    private fun tombstoneText(info: ApplicationExitInfo): String = try {
+        val bytes = if (info.reason == ApplicationExitInfo.REASON_CRASH_NATIVE) {
+            info.traceInputStream?.use { it.readBytes() }
+        } else {
+            null
+        }
+        val words = bytes?.let { String(it, Charsets.ISO_8859_1) }
+            ?.let { PRINTABLE.findAll(it).map { m -> m.value }.distinct().toList() }
+            .orEmpty()
+        if (words.isEmpty()) "" else "; tombstone: " + words.joinToString(" | ").take(MAX_TOMBSTONE)
+    } catch (e: Exception) {
+        "; tombstone unreadable: ${e.javaClass.simpleName}"
+    }
+
     private const val KB = 1024L
+    private const val MAX_TOMBSTONE = 1800
+    private val PRINTABLE = Regex("[ -~]{8,}")
 
     /** Exits somebody asked for: not worth a report. */
     private val BENIGN = setOf(
