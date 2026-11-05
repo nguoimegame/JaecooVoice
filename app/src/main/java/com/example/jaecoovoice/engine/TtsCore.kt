@@ -11,7 +11,12 @@ import java.io.File
 class TtsCore(
     private val filesDir: File,
     private val slot: TtsEngineSlot = TtsEngineSlot { model, dir ->
-        SherpaTtsEngine(model, dir, EspeakPhonemizer(EspeakData.dir(filesDir)))
+        SherpaTtsEngine(
+            model,
+            dir,
+            EspeakPhonemizer(EspeakData.dir(filesDir)),
+            onStep = { CrashTrace.mark(filesDir, it) }
+        )
     },
     private val idleTimeoutMs: Long = DEFAULT_IDLE_TIMEOUT_MS,
     private val clock: () -> Long = { System.currentTimeMillis() }
@@ -53,11 +58,13 @@ class TtsCore(
             return SynthResult.Failed("tts model not installed: $language")
         }
         if (text.isBlank()) return SynthResult.Spoken
+        CrashTrace.mark(filesDir, "load engine")
         val engine = slot.get(language, model, TtsModelStore.dir(filesDir, model))
-            ?: return SynthResult.Failed("tts model failed to load: $language")
+            ?: return SynthResult.Failed("tts model failed to load: $language").also { CrashTrace.mark(filesDir, CrashTrace.DONE) }
         lastUsedAt = clock()
         val samples = engine.generateStream(text, isCancelled = isCancelled, onChunk = onChunk)
         lastUsedAt = clock()
+        CrashTrace.mark(filesDir, CrashTrace.DONE)
         return when {
             isCancelled() -> SynthResult.Cancelled
             samples == TtsEngine.PHONEMIZER_UNAVAILABLE -> SynthResult.Failed("espeak phonemizer unavailable: ${model.espeakVoice}")

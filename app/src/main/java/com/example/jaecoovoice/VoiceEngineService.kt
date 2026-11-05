@@ -10,6 +10,7 @@ import android.os.Looper
 import android.os.RemoteException
 import android.util.Log
 import com.example.jaecoovoice.engine.CallerCheck
+import com.example.jaecoovoice.engine.CrashTrace
 import com.example.jaecoovoice.engine.EngineCore
 import com.example.jaecoovoice.engine.IListenCallback
 import com.example.jaecoovoice.engine.IModelCallback
@@ -162,6 +163,8 @@ class VoiceEngineService : Service() {
             val txt = text.orEmpty()
             val lang = language.orEmpty()
             val model = TtsCatalog.forLanguage(lang)
+            // A previous native crash leaves no trace but this; tell JaecooApp (it logs and shows it).
+            CrashTrace.takeReport(this@VoiceEngineService)?.let { speakFailed(cb, it) }
             when {
                 txt.isBlank() -> safely { cb?.onDone() }
                 model == null || !TtsModelStore.isInstalled(filesDir, model) -> speakFailed(cb, "tts model not installed: $lang")

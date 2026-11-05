@@ -57,7 +57,9 @@ class SherpaTtsEngine(
     modelDir: File,
     private val phonemizer: EspeakPhonemizer?,
     numThreads: Int = DEFAULT_THREADS,
-    provider: String = DEFAULT_PROVIDER
+    provider: String = DEFAULT_PROVIDER,
+    /** Told before each native step, so a native crash can be placed ([CrashTrace]). */
+    private val onStep: (String) -> Unit = {}
 ) : TtsEngine {
 
     private val tts: OfflineTts
@@ -86,6 +88,7 @@ class SherpaTtsEngine(
             model = modelConfig,
             ruleFsts = ruleFsts
         )
+        onStep("sherpa load model")
         tts = OfflineTts(null, config)
         val modelLang = tts.lang()
         if (model.frontend == TtsFrontend.ESPEAK && modelLang.isNotEmpty() && modelLang != model.espeakVoice) {
@@ -110,6 +113,7 @@ class SherpaTtsEngine(
     ): Int {
         if (isCancelled()) return 0
         val config = if (model.frontend == TtsFrontend.ESPEAK) {
+            onStep("espeak phonemize")
             val clauses = phonemizer?.clauses(text, model.espeakVoice) ?: return TtsEngine.PHONEMIZER_UNAVAILABLE
             val sentences = PiperPhonemes.sentences(clauses, model.espeakVoice)
             if (sentences.isEmpty()) return 0
@@ -118,6 +122,7 @@ class SherpaTtsEngine(
             GenerationConfig(sid = sid, speed = speed)
         }
         return try {
+            onStep("sherpa generate")
             val rate = tts.sampleRate()
             var streamed = 0
             // With phonemeCodepoints set, sherpa-onnx ignores the text argument.
