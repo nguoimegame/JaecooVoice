@@ -127,14 +127,13 @@ class SherpaTtsEngine(
             var streamed = 0
             // With phonemeCodepoints set, sherpa-onnx ignores the text argument.
             val input = if (model.frontend == TtsFrontend.ESPEAK) "" else text
-            // A real class, not a lambda: sherpa-onnx's JNI looks up `invoke([F)Ljava/lang/Integer;`
-            // on the callback, which an invokedynamic lambda does not have (NoSuchMethodError).
-            val callback = object : (FloatArray) -> Int {
-                override fun invoke(chunk: FloatArray): Int {
-                    if (isCancelled()) return 0
+            val callback = SherpaChunkCallback { chunk ->
+                if (isCancelled()) {
+                    0
+                } else {
                     onChunk(chunk, rate)
                     streamed += chunk.size
-                    return 1
+                    1
                 }
             }
             val audio = tts.generateWithConfigAndCallback(input, config, callback)
@@ -159,6 +158,15 @@ class SherpaTtsEngine(
         const val DEFAULT_THREADS = 2
         const val DEFAULT_PROVIDER = "cpu"
     }
+}
+
+/**
+ * The chunk callback handed to sherpa-onnx. Its JNI code looks up `invoke([F)Ljava/lang/Integer;`
+ * on this object by name, so it is a named class with that method (an invokedynamic lambda only
+ * has the erased `invoke(Object)`), and keepRules/rules.keep stops R8 from renaming or dropping it.
+ */
+internal class SherpaChunkCallback(private val onSamples: (FloatArray) -> Int) : (FloatArray) -> Int {
+    override fun invoke(samples: FloatArray): Int = onSamples(samples)
 }
 
 /**

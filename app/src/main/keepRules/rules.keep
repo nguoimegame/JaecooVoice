@@ -3,5 +3,12 @@
 # with "Failed to get field ID".
 -keep class com.k2fsa.sherpa.onnx.** { *; }
 
+# sherpa-onnx's JNI calls the TTS chunk callback by name and signature ("invoke",
+# "([F)Ljava/lang/Integer;"). R8 cannot see that call; without this rule it drops the method and the
+# process aborts with NoSuchMethodError as soon as TTS starts generating.
+-keep class com.example.jaecoovoice.engine.SherpaChunkCallback {
+    public java.lang.Integer invoke(float[]);
+}
+
 # libjaecoo-espeak.so binds Java_com_example_jaecoovoice_engine_EspeakNative_* by name.
 -keep class com.example.jaecoovoice.engine.EspeakNative { native <methods>; }
