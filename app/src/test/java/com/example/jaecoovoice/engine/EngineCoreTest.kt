@@ -9,11 +9,18 @@ import java.util.concurrent.Executor
 
 class EngineCoreTest {
 
-    private class FakeRecorder(private val result: RecordResult, override val peak: Float = 0.05f) : UtteranceRecorder {
+    private class FakeRecorder(
+        private val result: RecordResult,
+        override val peak: Float = 0.05f,
+        private val pauseSnapshots: List<FloatArray> = emptyList(),
+        private val during: () -> Unit = {}
+    ) : UtteranceRecorder {
         var cancelled = false
-        override fun record(onLevel: (Float) -> Unit, onSpeechStart: () -> Unit): RecordResult {
+        override fun record(onLevel: (Float) -> Unit, onSpeechStart: () -> Unit, onPause: (FloatArray) -> Unit): RecordResult {
             onLevel(0.3f)
             onSpeechStart()
+            pauseSnapshots.forEach(onPause)
+            during()
             return if (cancelled) RecordResult.Cancelled else result
         }
         override fun cancel() {
@@ -206,7 +213,7 @@ class EngineCoreTest {
         val recorder = object : UtteranceRecorder {
             override val peak = 0.05f
             var stopped = false
-            override fun record(onLevel: (Float) -> Unit, onSpeechStart: () -> Unit): RecordResult {
+            override fun record(onLevel: (Float) -> Unit, onSpeechStart: () -> Unit, onPause: (FloatArray) -> Unit): RecordResult {
                 core.cancel()
                 return if (stopped) RecordResult.Cancelled else audio
             }

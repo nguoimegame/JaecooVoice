@@ -9,19 +9,26 @@ package com.example.jaecoovoice.engine
  */
 class EndpointDetector(
     private val frameMs: Int = 100,
-    private val silenceMs: Int = 800,
+    private val silenceMs: Int = 600,
     private val maxMs: Int = 7_000,
-    private val noSpeechMs: Int = 4_000
+    private val noSpeechMs: Int = 4_000,
+    private val speculateMs: Int = 300
 ) {
-    enum class Signal { CONTINUE, END, NO_SPEECH }
+    /** [PAUSE] is sent once per silence, [speculateMs] after speech: time to decode ahead of [END]. */
+    enum class Signal { CONTINUE, PAUSE, END, NO_SPEECH }
 
     private var elapsedMs = 0
     private var frames = 0
     private var noiseFloor = Float.MAX_VALUE
     private var silentMs = 0
+    private var pauseSent = false
 
     /** True from the first frame loud enough to be speech. */
     var speechStarted = false
+        private set
+
+    /** After [Signal.END]: true when it came from silence, false when the time limit cut the speech. */
+    var endedBySilence = false
         private set
 
     fun onFrame(rms: Float): Signal {
@@ -33,13 +40,23 @@ class EndpointDetector(
         if (speaking) {
             speechStarted = true
             silentMs = 0
+            pauseSent = false
         } else if (speechStarted) {
             silentMs += frameMs
         }
 
+        val timedOut = elapsedMs >= maxMs
+        val silent = silentMs >= silenceMs
         return when {
-            speechStarted && (silentMs >= silenceMs || elapsedMs >= maxMs) -> Signal.END
+            speechStarted && (silent || timedOut) -> {
+                endedBySilence = silent && !timedOut
+                Signal.END
+            }
             !speechStarted && elapsedMs >= noSpeechMs -> Signal.NO_SPEECH
+            speechStarted && silentMs >= speculateMs && !pauseSent -> {
+                pauseSent = true
+                Signal.PAUSE
+            }
             else -> Signal.CONTINUE
         }
     }

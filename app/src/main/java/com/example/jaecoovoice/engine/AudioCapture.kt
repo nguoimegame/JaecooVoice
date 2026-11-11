@@ -10,7 +10,8 @@ import kotlin.math.sqrt
 
 /** Result of one recording. */
 sealed class RecordResult {
-    class Audio(val samples: FloatArray) : RecordResult()
+    /** [settledOnPause]: ended by silence, so the last `onPause` snapshot holds all the speech. */
+    class Audio(val samples: FloatArray, val settledOnPause: Boolean = false) : RecordResult()
     object NoSpeech : RecordResult()
     object Cancelled : RecordResult()
 
@@ -26,7 +27,12 @@ interface UtteranceRecorder {
     /** The actual [MediaRecorder.AudioSource] used during the recording. */
     val activeSource: Int get() = 0
 
-    fun record(onLevel: (Float) -> Unit = {}, onSpeechStart: () -> Unit = {}): RecordResult
+    /** [onPause] gets a normalized copy of what was recorded so far, once per silence after speech. */
+    fun record(
+        onLevel: (Float) -> Unit = {},
+        onSpeechStart: () -> Unit = {},
+        onPause: (FloatArray) -> Unit = {}
+    ): RecordResult
 
     fun cancel()
 }
@@ -65,14 +71,14 @@ class AudioCapture(
         class Failed(val reason: String) : Opened()
     }
 
-    override fun record(onLevel: (Float) -> Unit, onSpeechStart: () -> Unit): RecordResult {
+    override fun record(onLevel: (Float) -> Unit, onSpeechStart: () -> Unit, onPause: (FloatArray) -> Unit): RecordResult {
         peak = 0f
         if (cancelled) return RecordResult.Cancelled
         return when (val opened = open()) {
             is Opened.Failed -> RecordResult.Failed(opened.reason)
             is Opened.Ready -> try {
                 activeSource = opened.source
-                capture(opened.recorder, onLevel, onSpeechStart)
+                capture(opened.recorder, onLevel, onSpeechStart, onPause)
             } finally {
                 opened.recorder.release()
             }
@@ -95,7 +101,12 @@ class AudioCapture(
         return result
     }
 
-    private fun capture(recorder: AudioRecord, onLevel: (Float) -> Unit, onSpeechStart: () -> Unit): RecordResult {
+    private fun capture(
+        recorder: AudioRecord,
+        onLevel: (Float) -> Unit,
+        onSpeechStart: () -> Unit,
+        onPause: (FloatArray) -> Unit
+    ): RecordResult {
         val frameSamples = SAMPLE_RATE * FRAME_MS / MS_PER_SECOND
         val detector = EndpointDetector(frameMs = FRAME_MS)
         val frame = ShortArray(frameSamples)
@@ -109,9 +120,9 @@ class AudioCapture(
             onLevel(rms)
             if (rms > peak) peak = rms
             all.add(frame, read.coerceAtLeast(0))
-            silentFrames = if (read > 0 && frame.take(read).all { it.toInt() == 0 }) silentFrames + 1 else 0
+            silentFrames = if (read > 0 && allZero(frame, read)) silentFrames + 1 else 0
             val dead = silentFrames >= SILENT_FRAMES && all.size <= SILENT_FRAMES * frameSamples
-            result = verdict(read, dead, detector, rms, all)
+            result = failure(read, dead) ?: verdict(detector, rms, all, onPause)
             if (!speaking && detector.speechStarted) {
                 speaking = true
                 onSpeechStart()
@@ -120,15 +131,21 @@ class AudioCapture(
         return result ?: RecordResult.Cancelled
     }
 
-    /** What one frame decides: null to keep recording. */
-    private fun verdict(read: Int, dead: Boolean, detector: EndpointDetector, rms: Float, all: FloatArrayBuilder): RecordResult? = when {
+    private fun failure(read: Int, dead: Boolean): RecordResult? = when {
         read < 0 -> RecordResult.Failed("AudioRecord.read error $read")
         dead -> RecordResult.Failed("microphone gives only zeros", silent = true)
-        else -> when (detector.onFrame(rms)) {
-            EndpointDetector.Signal.END -> RecordResult.Audio(normalize(all.toArray()))
-            EndpointDetector.Signal.NO_SPEECH -> RecordResult.NoSpeech
-            EndpointDetector.Signal.CONTINUE -> null
+        else -> null
+    }
+
+    /** What one frame decides: null to keep recording. */
+    private fun verdict(detector: EndpointDetector, rms: Float, all: FloatArrayBuilder, onPause: (FloatArray) -> Unit): RecordResult? = when (detector.onFrame(rms)) {
+        EndpointDetector.Signal.END -> RecordResult.Audio(normalize(all.toArray()), detector.endedBySilence)
+        EndpointDetector.Signal.NO_SPEECH -> RecordResult.NoSpeech
+        EndpointDetector.Signal.PAUSE -> {
+            onPause(normalize(all.toArray()))
+            null
         }
+        EndpointDetector.Signal.CONTINUE -> null
     }
 
     /** Car microphones are quiet; raise the peak to the level the model is used to. */
@@ -137,6 +154,11 @@ class AudioCapture(
         if (top < MIN_NORMALIZE_PEAK || top >= TARGET_PEAK) return samples
         val gain = minOf(TARGET_PEAK / top, MAX_GAIN)
         return FloatArray(samples.size) { samples[it] * gain }
+    }
+
+    private fun allZero(frame: ShortArray, count: Int): Boolean {
+        for (i in 0 until count) if (frame[i].toInt() != 0) return false
+        return true
     }
 
     /** Reads one whole frame; returns the samples read or a negative error code. */

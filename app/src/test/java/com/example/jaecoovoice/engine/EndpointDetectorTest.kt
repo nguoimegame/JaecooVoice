@@ -65,4 +65,58 @@ class EndpointDetectorTest {
         detector.onFrame(0.1f)
         assertTrue(detector.speechStarted)
     }
+
+    @Test
+    fun pauseFiresOnceAfter300msSilence() {
+        val detector = EndpointDetector(frameMs = 100)
+        detector.feed(quiet, 3)
+        detector.feed(loud, 5)
+        assertEquals(Signal.CONTINUE, detector.feed(quiet, 2))
+        assertEquals(Signal.PAUSE, detector.onFrame(quiet))
+        assertEquals(Signal.CONTINUE, detector.onFrame(quiet))
+        assertEquals(Signal.CONTINUE, detector.onFrame(quiet))
+    }
+
+    @Test
+    fun pauseFiresAgainAfterSpeechResumes() {
+        val detector = EndpointDetector(frameMs = 100)
+        detector.feed(quiet, 3)
+        detector.feed(loud, 5)
+        assertEquals(Signal.PAUSE, detector.feed(quiet, 3))
+        detector.feed(loud, 2)
+        assertEquals(Signal.PAUSE, detector.feed(quiet, 3))
+    }
+
+    @Test
+    fun noPauseBeforeSpeechStarts() {
+        val detector = EndpointDetector(frameMs = 100)
+        assertEquals(Signal.CONTINUE, detector.feed(quiet, 10))
+    }
+
+    @Test
+    fun endAfter600msSilenceIsBySilence() {
+        val detector = EndpointDetector(frameMs = 100)
+        detector.feed(quiet, 3)
+        detector.feed(loud, 5)
+        assertEquals(Signal.CONTINUE, detector.feed(quiet, 5))
+        assertEquals(Signal.END, detector.onFrame(quiet))
+        assertTrue(detector.endedBySilence)
+    }
+
+    @Test
+    fun endAtMaxMsIsNotBySilence() {
+        val detector = EndpointDetector(frameMs = 100, maxMs = 2_000)
+        detector.feed(loud, 19)
+        assertEquals(Signal.END, detector.onFrame(loud))
+        assertFalse(detector.endedBySilence)
+    }
+
+    @Test
+    fun simultaneousSilenceAndMaxIsNotBySilence() {
+        val detector = EndpointDetector(frameMs = 100, maxMs = 1_000)
+        detector.feed(loud, 4)
+        detector.feed(quiet, 5)
+        assertEquals(Signal.END, detector.onFrame(quiet))
+        assertFalse(detector.endedBySilence)
+    }
 }
