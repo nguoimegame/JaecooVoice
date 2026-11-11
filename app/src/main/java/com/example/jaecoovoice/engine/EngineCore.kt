@@ -6,8 +6,11 @@ import android.content.pm.PackageManager
 import android.util.Log
 import java.io.File
 import java.util.Locale
+import java.util.concurrent.Callable
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
+import java.util.concurrent.FutureTask
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -15,16 +18,20 @@ import java.util.concurrent.atomic.AtomicBoolean
  * (JaecooApp), JaecooRecognitionService and RecognizeSpeechActivity (other apps) all go through
  * here, so there is at most one listen at a time; a second one gets [VoiceErrors.BUSY].
  *
- * Work runs on [executor] (one thread). The engine loads lazily, is kept for one language at a
- * time and is freed by [releaseIfIdle].
+ * Recording runs on [executor] (one thread, `voice-engine`). Loading, decoding ahead and freeing
+ * the engine run on [decodeExecutor] (one thread, `voice-decode`): the microphone opens while the
+ * model still loads, and a sentence is decoded from the pause snapshot before its end is certain.
+ * The engine loads lazily, is kept for one language at a time and is freed by [releaseIfIdle].
  */
-@Suppress("TooGenericExceptionCaught")
+@Suppress("TooGenericExceptionCaught", "LongParameterList", "TooManyFunctions")
 class EngineCore(
     private val executor: Executor,
+    private val decodeExecutor: Executor,
     private val modelFor: (String) -> VoiceModel?,
     private val installedDir: (VoiceModel) -> File?,
     engineFactory: (VoiceModel, File) -> SpeechEngine,
-    private val mic: MicSetup
+    private val mic: MicSetup,
+    private val clock: () -> Long = System::currentTimeMillis
 ) {
 
     /** How to reach the microphone: permission, a recorder per source, and the current source. */
@@ -47,12 +54,20 @@ class EngineCore(
 
         @Volatile
         var recorder: UtteranceRecorder? = null
+
+        /** The model failed to load while the microphone was open. */
+        @Volatile
+        var loadFailed = false
+
+        /** Decode of the latest pause snapshot: the whole sentence if the speech ended in silence. */
+        @Volatile
+        var speculative: FutureTask<String>? = null
     }
 
     private val lock = Any()
     private var current: Session? = null
 
-    /** Only touched on [executor]. */
+    /** Only touched on [decodeExecutor]. */
     private val slot = EngineSlot(engineFactory)
 
     val busy: Boolean get() = synchronized(lock) { current != null }
@@ -89,9 +104,16 @@ class EngineCore(
 
     /** Frees the engine (about 100 MB) when nothing is listening. */
     fun releaseIfIdle() {
-        executor.execute {
+        decodeExecutor.execute {
             if (!busy) slot.release()
         }
+    }
+
+    /** Loads the engine for [language] ahead of a listen; does nothing while listening or without a model. */
+    fun warmUp(language: String) {
+        val model = modelFor(language)
+        val dir = model?.let(installedDir)
+        if (!busy && model != null && dir != null) decodeExecutor.execute { slot.get(language, model, dir) }
     }
 
     private fun run(session: Session, language: String) {
@@ -103,25 +125,49 @@ class EngineCore(
             dir == null -> fail(session, VoiceErrors.MODEL_MISSING)
             !mic.hasPermission() -> fail(session, VoiceErrors.NO_MIC_PERMISSION)
             else -> {
-                val speech = slot.get(language, model, dir)
+                val startedAt = clock()
+                val load = FutureTask(
+                    Callable {
+                        slot.get(language, model, dir).also {
+                            if (it == null) {
+                                session.loadFailed = true
+                                session.recorder?.cancel()
+                            }
+                        }
+                    }
+                )
+                decodeExecutor.execute(load)
                 when {
-                    speech == null -> fail(session, VoiceErrors.MODEL_LOAD_FAILED, slot.loadError(language).orEmpty())
+                    load.isDone && load.get() == null -> failLoad(session, language)
                     session.cancelled -> fail(session, VoiceErrors.CANCELLED)
-                    else -> record(session, speech)
+                    else -> record(session, Listen(language, load, startedAt))
                 }
             }
         }
     }
 
-    private fun record(session: Session, speech: SpeechEngine) {
+    /** One listen's engine: [load] resolves to it (or null) on the decode thread. */
+    private class Listen(val language: String, val load: FutureTask<SpeechEngine?>, val startedAt: Long)
+
+    private class Timing(val loadMs: Long, val recordMs: Long)
+
+    private fun failLoad(session: Session, language: String) = fail(session, VoiceErrors.MODEL_LOAD_FAILED, slot.loadError(language).orEmpty())
+
+    private fun record(session: Session, listen: Listen) {
         val sink = session.sink
         val sourceIndex = mic.sources.get()
         val recorder = mic.recorderFactory(MicSources.source(sourceIndex))
         session.recorder = recorder
-        if (session.cancelled) recorder.cancel()
+        if (session.cancelled || session.loadFailed) recorder.cancel()
         sink.onReady()
         sink.onState(ListenSink.STATE_LISTENING)
-        val recorded = recorder.record(onLevel = sink::onLevel, onSpeechStart = sink::onSpeechStart)
+        val recordStart = clock()
+        val recorded = recorder.record(
+            onLevel = sink::onLevel,
+            onSpeechStart = sink::onSpeechStart,
+            onPause = { snapshot -> session.speculative = decodeAhead(listen.load, snapshot) }
+        )
+        val timing = Timing(recordStart - listen.startedAt, clock() - recordStart)
         sink.onEnd()
         val effectiveSourceIndex = if (recorder.activeSource != 0) {
             MicSources.indexOfSource(recorder.activeSource)
@@ -129,16 +175,17 @@ class EngineCore(
             sourceIndex
         }
         val capture = Capture(effectiveSourceIndex, recorder.peak)
-        when (recorded) {
-            is RecordResult.Audio -> {
+        when {
+            session.loadFailed -> failLoad(session, listen.language)
+            recorded is RecordResult.Audio -> {
                 if (effectiveSourceIndex != sourceIndex) {
                     mic.sources.set(effectiveSourceIndex)
                 }
-                transcribe(session, speech, recorded.samples, capture)
+                transcribe(session, listen, recorded, capture, timing)
             }
-            RecordResult.NoSpeech -> noSpeech(session, VoiceErrors.NO_SPEECH, capture)
-            RecordResult.Cancelled -> fail(session, VoiceErrors.CANCELLED)
-            is RecordResult.Failed -> {
+            recorded == RecordResult.NoSpeech -> noSpeech(session, VoiceErrors.NO_SPEECH, capture)
+            recorded == RecordResult.Cancelled -> fail(session, VoiceErrors.CANCELLED)
+            recorded is RecordResult.Failed -> {
                 mic.sources.set(MicSources.next(sourceIndex, 0f))
                 if (recorded.silent) {
                     noSpeech(session, VoiceErrors.MIC_SILENT, capture)
@@ -149,10 +196,42 @@ class EngineCore(
         }
     }
 
-    private fun transcribe(session: Session, speech: SpeechEngine, samples: FloatArray, capture: Capture) {
+    /** Queues a decode of [snapshot] behind the model load (the decode thread is FIFO). */
+    private fun decodeAhead(load: FutureTask<SpeechEngine?>, snapshot: FloatArray): FutureTask<String> {
+        val task = FutureTask(Callable { load.get()?.transcribe(snapshot)?.trim().orEmpty() })
+        decodeExecutor.execute(task)
+        return task
+    }
+
+    /** The text decoded ahead when the speech ended in silence, or null: decode it all. */
+    private fun decodedAhead(session: Session, recorded: RecordResult.Audio): String? {
+        val task = session.speculative?.takeIf { recorded.settledOnPause } ?: return null
+        return try {
+            task.get()
+        } catch (e: ExecutionException) {
+            Log.w(TAG, "decode ahead failed", e)
+            null
+        }
+    }
+
+    private fun transcribe(session: Session, listen: Listen, recorded: RecordResult.Audio, capture: Capture, timing: Timing) {
         session.sink.onState(ListenSink.STATE_RECOGNIZING)
+        val decodeStart = clock()
         val text = try {
-            speech.transcribe(samples).trim()
+            val ahead = decodedAhead(session, recorded)
+            val engine = if (ahead == null) listen.load.get() else null
+            if (ahead == null && engine == null) {
+                failLoad(session, listen.language)
+                return
+            }
+            val result = ahead ?: engine!!.transcribe(recorded.samples).trim()
+            val mode = when {
+                ahead != null -> "hit"
+                session.speculative != null -> "miss"
+                else -> "none"
+            }
+            Log.i(TAG, "listen load=${timing.loadMs}ms record=${timing.recordMs}ms decode=${clock() - decodeStart}ms speculative=$mode")
+            result
         } catch (e: RuntimeException) {
             Log.e(TAG, "transcribe failed", e)
             fail(session, VoiceErrors.RECOGNIZE_FAILED, describe(e))
@@ -192,6 +271,7 @@ class EngineCore(
 
         private fun create(app: Context): EngineCore = EngineCore(
             executor = Executors.newSingleThreadExecutor { Thread(it, "voice-engine") },
+            decodeExecutor = Executors.newSingleThreadExecutor { Thread(it, "voice-decode") },
             modelFor = ModelCatalog::forLanguage,
             installedDir = { model -> ModelStore.dir(app.filesDir, model).takeIf { ModelStore.isInstalled(app.filesDir, model) } },
             engineFactory = { model, dir -> SherpaSpeechEngine(model, dir) },

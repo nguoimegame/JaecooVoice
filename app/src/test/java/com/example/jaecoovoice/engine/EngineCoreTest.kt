@@ -80,14 +80,17 @@ class EngineCoreTest {
     private var recorderFactoryCalls = 0
     private var engines = mutableListOf<FakeEngine>()
 
+    @Suppress("LongParameterList")
     private fun core(
         recorder: () -> UtteranceRecorder = { FakeRecorder(audio) },
         engine: () -> SpeechEngine = { FakeEngine(" tăng gió ") },
         executor: Executor = now,
+        decodeExecutor: Executor = now,
         installed: Boolean = true,
         permission: Boolean = true
     ) = EngineCore(
         executor = executor,
+        decodeExecutor = decodeExecutor,
         modelFor = ModelCatalog::forLanguage,
         installedDir = { if (installed) File("models") else null },
         engineFactory = { _, _ -> engine().also { if (it is FakeEngine) engines += it } },
@@ -255,5 +258,110 @@ class EngineCoreTest {
         assertTrue(engines.single().released)
         core.listenOnce()
         assertEquals(2, engines.size)
+    }
+
+    private class SizeEngine : SpeechEngine {
+        val decoded = mutableListOf<Int>()
+        override fun transcribe(samples: FloatArray): String {
+            decoded += samples.size
+            return "snap${samples.size}"
+        }
+        override fun release() = Unit
+    }
+
+    private fun sentence(settled: Boolean, size: Int = 2) = RecordResult.Audio(FloatArray(size), settledOnPause = settled)
+
+    @Test
+    fun usesTheSnapshotResultWhenTheSpeechEndedInSilence() {
+        val decode = ManualExecutor()
+        val engine = SizeEngine()
+        val recorder = FakeRecorder(sentence(true), pauseSnapshots = listOf(FloatArray(1)), during = decode::runAll)
+        val sink = core(recorder = { recorder }, engine = { engine }, decodeExecutor = decode).listenOnce()
+        assertEquals("result:snap1", sink.terminals.single())
+        assertEquals(listOf(1), engine.decoded)
+    }
+
+    @Test
+    fun theLatestSnapshotWinsAfterSpeechResumes() {
+        val decode = ManualExecutor()
+        val engine = SizeEngine()
+        val recorder = FakeRecorder(sentence(true, 5), pauseSnapshots = listOf(FloatArray(1), FloatArray(3)), during = decode::runAll)
+        val sink = core(recorder = { recorder }, engine = { engine }, decodeExecutor = decode).listenOnce()
+        assertEquals("result:snap3", sink.terminals.single())
+    }
+
+    @Test
+    fun theWholeUtteranceIsDecodedWhenTheTimeLimitCutIt() {
+        val decode = ManualExecutor()
+        val engine = SizeEngine()
+        val recorder = FakeRecorder(sentence(false, 5), pauseSnapshots = listOf(FloatArray(1)), during = decode::runAll)
+        val sink = core(recorder = { recorder }, engine = { engine }, decodeExecutor = decode).listenOnce()
+        assertEquals("result:snap5", sink.terminals.single())
+    }
+
+    @Test
+    fun theMicOpensBeforeTheModelIsLoaded() {
+        val decode = ManualExecutor()
+        var loadedWhenRecording = -1
+        val recorder = FakeRecorder(audio, during = {
+            loadedWhenRecording = engines.size
+            decode.runAll()
+        })
+        val sink = core(recorder = { recorder }, decodeExecutor = decode).listenOnce()
+        assertEquals(0, loadedWhenRecording)
+        assertEquals("result:tăng gió", sink.terminals.single())
+    }
+
+    @Test
+    fun aLoadFailureWhileRecordingCancelsTheMicAndReportsOnce() {
+        val decode = ManualExecutor()
+        val recorder = FakeRecorder(audio, during = decode::runAll)
+        val sink = core(recorder = { recorder }, engine = { error("bad onnx") }, decodeExecutor = decode).listenOnce()
+        sink.assertOnlyError(VoiceErrors.MODEL_LOAD_FAILED, detailContains = "bad onnx")
+        assertTrue(recorder.cancelled)
+    }
+
+    @Test
+    fun cancelDuringADecodeAheadEndsOnceWithCancelled() {
+        val decode = ManualExecutor()
+        lateinit var core: EngineCore
+        val recorder = FakeRecorder(sentence(true), pauseSnapshots = listOf(FloatArray(1)), during = { core.cancel() })
+        core = core(recorder = { recorder }, decodeExecutor = decode)
+        val sink = core.listenOnce()
+        decode.runAll()
+        sink.assertOnlyError(VoiceErrors.CANCELLED)
+    }
+
+    @Test
+    fun warmUpLoadsTheEngineOnTheDecodeExecutorAndTheListenReusesIt() {
+        val decode = ManualExecutor()
+        val core = core(recorder = { FakeRecorder(audio, during = decode::runAll) }, decodeExecutor = decode)
+        core.warmUp("vi")
+        assertEquals(0, engines.size)
+        decode.runAll()
+        assertEquals(1, engines.size)
+        core.listenOnce()
+        assertEquals(1, engines.size)
+    }
+
+    @Test
+    fun warmUpDoesNothingWhileListening() {
+        val decode = ManualExecutor()
+        val core = core(executor = ManualExecutor(), decodeExecutor = decode)
+        core.listenOnce()
+        core.warmUp("vi")
+        assertEquals(0, decode.queued)
+    }
+
+    @Test
+    fun releaseRunsOnTheDecodeExecutor() {
+        val decode = ManualExecutor()
+        val core = core(decodeExecutor = decode)
+        core.warmUp("vi")
+        decode.runAll()
+        core.releaseIfIdle()
+        assertFalse(engines.single().released)
+        decode.runAll()
+        assertTrue(engines.single().released)
     }
 }
