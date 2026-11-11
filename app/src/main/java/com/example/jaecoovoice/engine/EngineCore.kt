@@ -113,7 +113,7 @@ class EngineCore(
     fun warmUp(language: String) {
         val model = modelFor(language)
         val dir = model?.let(installedDir)
-        if (!busy && model != null && dir != null) decodeExecutor.execute { slot.get(language, model, dir) }
+        if (!busy && model != null && dir != null) decodeExecutor.execute { if (!busy) slot.get(language, model, dir) }
     }
 
     private fun run(session: Session, language: String) {
@@ -128,7 +128,7 @@ class EngineCore(
                 val startedAt = clock()
                 val load = FutureTask(
                     Callable {
-                        slot.get(language, model, dir).also {
+                        loadEngine(language, model, dir).also {
                             if (it == null) {
                                 session.loadFailed = true
                                 session.recorder?.cancel()
@@ -138,7 +138,7 @@ class EngineCore(
                 )
                 decodeExecutor.execute(load)
                 when {
-                    load.isDone && load.get() == null -> failLoad(session, language)
+                    load.isDone && engineOf(load) == null -> failLoad(session, language)
                     session.cancelled -> fail(session, VoiceErrors.CANCELLED)
                     else -> record(session, Listen(language, load, startedAt))
                 }
@@ -150,6 +150,21 @@ class EngineCore(
     private class Listen(val language: String, val load: FutureTask<SpeechEngine?>, val startedAt: Long)
 
     private class Timing(val loadMs: Long, val recordMs: Long)
+
+    /** [EngineSlot.get] keeps only exceptions; an Error (out of memory) must still end the listen. */
+    private fun loadEngine(language: String, model: VoiceModel, dir: File): SpeechEngine? = try {
+        slot.get(language, model, dir)
+    } catch (e: Error) {
+        Log.e(TAG, "cannot load speech model", e)
+        null
+    }
+
+    private fun engineOf(load: FutureTask<SpeechEngine?>): SpeechEngine? = try {
+        load.get()
+    } catch (e: ExecutionException) {
+        Log.e(TAG, "speech model load failed", e)
+        null
+    }
 
     private fun failLoad(session: Session, language: String) = fail(session, VoiceErrors.MODEL_LOAD_FAILED, slot.loadError(language).orEmpty())
 
@@ -165,7 +180,10 @@ class EngineCore(
         val recorded = recorder.record(
             onLevel = sink::onLevel,
             onSpeechStart = sink::onSpeechStart,
-            onPause = { snapshot -> session.speculative = decodeAhead(listen.load, snapshot) }
+            onPause = { snapshot ->
+                session.speculative?.cancel(false)
+                session.speculative = decodeAhead(listen.load, snapshot)
+            }
         )
         val timing = Timing(recordStart - listen.startedAt, clock() - recordStart)
         sink.onEnd()
@@ -218,13 +236,14 @@ class EngineCore(
         session.sink.onState(ListenSink.STATE_RECOGNIZING)
         val decodeStart = clock()
         val text = try {
-            val ahead = decodedAhead(session, recorded)
-            val engine = if (ahead == null) listen.load.get() else null
-            if (ahead == null && engine == null) {
+            val engine = engineOf(listen.load)
+            if (engine == null) {
                 failLoad(session, listen.language)
                 return
             }
-            val result = ahead ?: engine!!.transcribe(recorded.samples).trim()
+            val ahead = decodedAhead(session, recorded)
+            if (ahead == null) session.speculative?.cancel(false)
+            val result = ahead ?: engine.transcribe(recorded.samples).trim()
             val mode = when {
                 ahead != null -> "hit"
                 session.speculative != null -> "miss"

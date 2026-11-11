@@ -364,4 +364,41 @@ class EngineCoreTest {
         decode.runAll()
         assertTrue(engines.single().released)
     }
+
+    @Test
+    fun aSlowLoadThatFailsAfterRecordingIsALoadFailureNotNoSpeech() {
+        val decode = java.util.concurrent.Executors.newSingleThreadExecutor()
+        try {
+            val recorder = FakeRecorder(sentence(true), pauseSnapshots = listOf(FloatArray(1)))
+            val sink = core(
+                recorder = { recorder },
+                engine = {
+                    Thread.sleep(200)
+                    error("bad onnx")
+                },
+                decodeExecutor = decode
+            ).listenOnce()
+            sink.assertOnlyError(VoiceErrors.MODEL_LOAD_FAILED)
+            assertEquals(0, store.index)
+        } finally {
+            decode.shutdownNow()
+        }
+    }
+
+    @Test
+    fun warmUpQueuedBeforeAListenDoesNotLoadOnceTheListenHasStarted() {
+        val decode = ManualExecutor()
+        val core = core(executor = ManualExecutor(), decodeExecutor = decode)
+        core.warmUp("vi")
+        core.listenOnce()
+        decode.runAll()
+        assertEquals(0, engines.size)
+    }
+
+    @Test
+    fun anErrorWhileLoadingEndsTheListenAndFreesTheCore() {
+        val core = core(engine = { throw OutOfMemoryError("heap") })
+        core.listenOnce().assertOnlyError(VoiceErrors.MODEL_LOAD_FAILED)
+        assertFalse(core.busy)
+    }
 }
