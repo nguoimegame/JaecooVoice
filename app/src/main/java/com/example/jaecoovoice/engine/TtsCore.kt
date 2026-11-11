@@ -23,6 +23,7 @@ class TtsCore(
 ) {
 
     private var lastUsedAt: Long = 0L
+    private var primedEngine: TtsEngine? = null
 
     /**
      * Checks if the offline model for [language] is downloaded and complete.
@@ -72,6 +73,22 @@ class TtsCore(
             samples <= 0 -> SynthResult.Failed("tts produced no audio: $language")
             else -> SynthResult.Spoken
         }
+    }
+
+    /**
+     * Loads the engine for [language] and starts espeak-ng so the first reply does not pay for it.
+     * False when there is no installed model or it fails to load; nothing is thrown.
+     */
+    @Synchronized
+    fun warmUp(language: String): Boolean {
+        val model = TtsCatalog.forLanguage(language)?.takeIf { TtsModelStore.isInstalled(filesDir, it) }
+        val engine = model?.let { slot.get(language, it, TtsModelStore.dir(filesDir, it)) }
+        if (engine != null && engine !== primedEngine) {
+            engine.prime()
+            primedEngine = engine
+        }
+        if (engine != null) lastUsedAt = clock()
+        return engine != null
     }
 
     /**

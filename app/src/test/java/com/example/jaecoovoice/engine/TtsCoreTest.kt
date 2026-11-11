@@ -22,6 +22,11 @@ class TtsCoreTest {
     ) : TtsEngine {
         var generateStreamCallCount = 0
         var released = false
+        var primed = 0
+
+        override fun prime() {
+            primed++
+        }
 
         override fun generate(text: String, sid: Int, speed: Float): TtsAudio {
             return TtsAudio(floatArrayOf(0.1f), sampleRate)
@@ -247,5 +252,50 @@ class TtsCoreTest {
         TtsCore.resetForTesting(customCore)
         // Verify resetForTesting clears it
         TtsCore.resetForTesting(null)
+    }
+
+    @Test
+    fun warmUpLoadsAndPrimesTheEngineOnce() {
+        val fakeEngine = FakeTtsEngine()
+        var loads = 0
+        val core = TtsCore(filesDir = temp.root, slot = TtsEngineSlot(factory = { _, _ -> fakeEngine.also { loads++ } }))
+        markInstalled(temp.root, TtsCatalog.VI_VAIS1000)
+
+        assertTrue(core.warmUp("vi"))
+        assertTrue(core.warmUp("vi"))
+
+        assertEquals(1, loads)
+        assertEquals(1, fakeEngine.primed)
+    }
+
+    @Test
+    fun warmUpIsFalseWhenNotInstalledOrUnknown() {
+        val core = TtsCore(filesDir = temp.root, slot = TtsEngineSlot(factory = { _, _ -> FakeTtsEngine() }))
+        assertFalse(core.warmUp("vi"))
+        assertFalse(core.warmUp("xx"))
+    }
+
+    @Test
+    fun warmUpIsFalseWhenTheLoadFails() {
+        val core = TtsCore(filesDir = temp.root, slot = TtsEngineSlot(factory = { _, _ -> error("bad") }))
+        markInstalled(temp.root, TtsCatalog.VI_VAIS1000)
+        assertFalse(core.warmUp("vi"))
+    }
+
+    @Test
+    fun warmUpPushesBackTheIdleRelease() {
+        var now = 1000L
+        val fakeEngine = FakeTtsEngine()
+        val core = TtsCore(filesDir = temp.root, slot = TtsEngineSlot(factory = { _, _ -> fakeEngine }), idleTimeoutMs = 5000L, clock = { now })
+        markInstalled(temp.root, TtsCatalog.VI_VAIS1000)
+        core.warmUp("vi")
+        now = 5500L
+        core.warmUp("vi")
+        now = 9000L
+        core.releaseIfIdle()
+        assertFalse(fakeEngine.released)
+        now = 10_500L
+        core.releaseIfIdle()
+        assertTrue(fakeEngine.released)
     }
 }

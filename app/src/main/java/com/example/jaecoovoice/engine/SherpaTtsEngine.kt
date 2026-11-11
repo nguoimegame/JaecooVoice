@@ -35,6 +35,11 @@ interface TtsEngine {
     ): Int
     fun release()
 
+    /** Starts what the first [generateStream] would otherwise start (espeak-ng); nothing by default. */
+    fun prime() {
+        // Default no-op.
+    }
+
     companion object {
         /** espeak-ng could not start, or does not know the model's voice. */
         const val PHONEMIZER_UNAVAILABLE = -1
@@ -63,6 +68,10 @@ class SherpaTtsEngine(
 ) : TtsEngine {
 
     private val tts: OfflineTts
+
+    override fun prime() {
+        if (model.frontend == TtsFrontend.ESPEAK) phonemizer?.clauses(PRIME_TEXT, model.espeakVoice)
+    }
 
     init {
         val modelPath = File(modelDir, model.modelFile).absolutePath
@@ -157,6 +166,7 @@ class SherpaTtsEngine(
         private const val TAG = "SherpaTtsEngine"
         const val DEFAULT_THREADS = 2
         const val DEFAULT_PROVIDER = "cpu"
+        private const val PRIME_TEXT = "a"
     }
 }
 
