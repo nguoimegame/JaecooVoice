@@ -67,7 +67,7 @@ class AndroidAudioFocusController(private val audioManager: AudioManager) : Audi
  * Interface for writing PCM audio to hardware speakers.
  */
 interface TrackPlayer {
-    fun play(samples: FloatArray, sampleRate: Int, isCancelled: () -> Boolean)
+    fun play(samples: ShortArray, sampleRate: Int, isCancelled: () -> Boolean)
     fun stop()
 }
 
@@ -80,8 +80,8 @@ class AndroidTrackPlayer : TrackPlayer {
     @Volatile
     private var currentTrack: AudioTrack? = null
 
-    override fun play(samples: FloatArray, sampleRate: Int, isCancelled: () -> Boolean) {
-        val pcm = toPcm16(samples)
+    override fun play(samples: ShortArray, sampleRate: Int, isCancelled: () -> Boolean) {
+        val pcm = samples
         val minBufferSize = AudioTrack.getMinBufferSize(
             sampleRate,
             AudioFormat.CHANNEL_OUT_MONO,
@@ -209,7 +209,7 @@ class TtsPlayer(
 
     @Suppress("TooGenericExceptionCaught", "LongParameterList")
     fun play(
-        samples: FloatArray,
+        samples: ShortArray,
         sampleRate: Int,
         isCancelled: () -> Boolean = { false },
         onStart: () -> Unit = {},

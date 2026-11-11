@@ -9,6 +9,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.RemoteException
 import android.util.Log
+import com.example.jaecoovoice.engine.AndroidTrackPlayer
 import com.example.jaecoovoice.engine.CallerCheck
 import com.example.jaecoovoice.engine.CrashTrace
 import com.example.jaecoovoice.engine.EngineCore
@@ -22,12 +23,14 @@ import com.example.jaecoovoice.engine.ModelDownloads
 import com.example.jaecoovoice.engine.ModelListener
 import com.example.jaecoovoice.engine.ModelStore
 import com.example.jaecoovoice.engine.StatusKeys
+import com.example.jaecoovoice.engine.TtsCache
 import com.example.jaecoovoice.engine.TtsCatalog
 import com.example.jaecoovoice.engine.TtsCore
 import com.example.jaecoovoice.engine.TtsModel
 import com.example.jaecoovoice.engine.TtsModelDownloads
 import com.example.jaecoovoice.engine.TtsModelStore
 import com.example.jaecoovoice.engine.TtsPlayer
+import java.io.File
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicLong
 
@@ -46,6 +49,7 @@ class VoiceEngineService : Service() {
     private val ttsDownloads by lazy { TtsModelDownloads.get(this) }
     private val ttsPlayer by lazy { TtsPlayer.create(this) }
     private val ttsCore by lazy { TtsCore.get(this) }
+    private val ttsCache by lazy { TtsCache(File(cacheDir, "tts")) }
     private val ttsExecutor = Executors.newSingleThreadExecutor { Thread(it, "tts-engine") }
     private val speechGeneration = AtomicLong(0L)
     private val activeSpeakingGeneration = AtomicLong(0L)
@@ -155,6 +159,7 @@ class VoiceEngineService : Service() {
             activeSpeakingGeneration.set(0L)
             ttsPlayer.stop()
             ttsCore.release()
+            ttsCache.clear()
             TtsModelStore.delete(filesDir, model)
         }
 
@@ -220,52 +225,15 @@ class VoiceEngineService : Service() {
                 return@execute
             }
             try {
-                val chunks = mutableListOf<FloatArray>()
-                var sampleRate = 0
-                val result = ttsCore.synthesize(
-                    language = lang,
-                    text = txt,
-                    isCancelled = { speechGeneration.get() != genId }
-                ) { chunk, rate ->
-                    chunks.add(chunk)
-                    sampleRate = rate
+                val cacheKey = cacheKeyFor(txt, lang)
+                val cached = cacheKey?.let { ttsCache.get(it) }
+                val started = System.currentTimeMillis()
+                val speech = cached ?: synthesize(txt, lang, cb, genId)
+                if (speech != null) {
+                    Log.i(TTS_TAG, "speak cache=${if (cached != null) "hit" else "miss"} synth=${System.currentTimeMillis() - started}ms")
+                    val completed = play(speech, cb, genId)
+                    if (completed && cached == null && cacheKey != null) ttsCache.put(cacheKey, speech)
                 }
-
-                val totalSamples = chunks.sumOf { it.size }
-                when {
-                    // Cancelled (stopSpeaking or a newer speak/listen): say nothing more.
-                    speechGeneration.get() != genId || result == TtsCore.SynthResult.Cancelled -> return@execute
-                    result is TtsCore.SynthResult.Failed -> {
-                        speakFailed(cb, result.reason)
-                        return@execute
-                    }
-                    totalSamples == 0 -> {
-                        speakFailed(cb, "tts produced no audio: $lang")
-                        return@execute
-                    }
-                }
-
-                val samples = FloatArray(totalSamples)
-                var offset = 0
-                for (chunk in chunks) {
-                    System.arraycopy(chunk, 0, samples, offset, chunk.size)
-                    offset += chunk.size
-                }
-
-                ttsPlayer.play(
-                    samples = samples,
-                    sampleRate = sampleRate,
-                    isCancelled = { speechGeneration.get() != genId },
-                    onStart = { safely { cb?.onStart() } },
-                    onDone = {
-                        activeSpeakingGeneration.compareAndSet(genId, 0L)
-                        safely { cb?.onDone() }
-                    },
-                    onError = { msg ->
-                        activeSpeakingGeneration.compareAndSet(genId, 0L)
-                        safely { cb?.onError(msg) }
-                    }
-                )
             } catch (e: Exception) {
                 safely { cb?.onError(e.message ?: "Lỗi phát âm TTS") }
             } finally {
@@ -273,6 +241,65 @@ class VoiceEngineService : Service() {
                 scheduleTtsRelease()
             }
         }
+    }
+
+    /** The cache key of this reply, or null when it is not worth keeping. */
+    private fun cacheKeyFor(txt: String, lang: String): String? {
+        val model = TtsCatalog.forLanguage(lang)
+        return if (model != null && ttsCache.isCacheable(txt)) ttsCache.key(appVersionCode, model.id, txt) else null
+    }
+
+    private val appVersionCode: Long by lazy { packageManager.getPackageInfo(packageName, 0).longVersionCode }
+
+    /** Synthesizes the whole reply; null when it was cancelled or failed (a failure has been reported). */
+    private fun synthesize(txt: String, lang: String, cb: ITtsCallback?, genId: Long): TtsCache.Speech? {
+        val chunks = mutableListOf<FloatArray>()
+        var sampleRate = 0
+        val result = ttsCore.synthesize(
+            language = lang,
+            text = txt,
+            isCancelled = { speechGeneration.get() != genId }
+        ) { chunk, rate ->
+            chunks.add(chunk)
+            sampleRate = rate
+        }
+        val totalSamples = chunks.sumOf { it.size }
+        return when {
+            // Cancelled (stopSpeaking or a newer speak/listen): say nothing more.
+            speechGeneration.get() != genId || result == TtsCore.SynthResult.Cancelled -> null
+            result is TtsCore.SynthResult.Failed -> null.also { speakFailed(cb, result.reason) }
+            totalSamples == 0 -> null.also { speakFailed(cb, "tts produced no audio: $lang") }
+            else -> {
+                val samples = FloatArray(totalSamples)
+                var offset = 0
+                for (chunk in chunks) {
+                    System.arraycopy(chunk, 0, samples, offset, chunk.size)
+                    offset += chunk.size
+                }
+                TtsCache.Speech(AndroidTrackPlayer.toPcm16(samples), sampleRate)
+            }
+        }
+    }
+
+    /** Plays [speech]; true when it played to the end without being interrupted or failing. */
+    private fun play(speech: TtsCache.Speech, cb: ITtsCallback?, genId: Long): Boolean {
+        var completed = false
+        ttsPlayer.play(
+            samples = speech.samples,
+            sampleRate = speech.sampleRate,
+            isCancelled = { speechGeneration.get() != genId },
+            onStart = { safely { cb?.onStart() } },
+            onDone = {
+                completed = true
+                activeSpeakingGeneration.compareAndSet(genId, 0L)
+                safely { cb?.onDone() }
+            },
+            onError = { msg ->
+                activeSpeakingGeneration.compareAndSet(genId, 0L)
+                safely { cb?.onError(msg) }
+            }
+        )
+        return completed
     }
 
     /** Every speak failure is logged here and reaches JaecooApp, which sends it to the log server. */

@@ -36,7 +36,7 @@ class TtsPlayerTest {
         var throwOnPlay: Exception? = null
         var onPlayCallback: (() -> Unit)? = null
 
-        override fun play(samples: FloatArray, sampleRate: Int, isCancelled: () -> Boolean) {
+        override fun play(samples: ShortArray, sampleRate: Int, isCancelled: () -> Boolean) {
             playCount++
             throwOnPlay?.let { throw it }
             onPlayCallback?.invoke()
@@ -57,7 +57,7 @@ class TtsPlayerTest {
         var done = false
         var error: String? = null
 
-        val samples = FloatArray(100) { 0.1f }
+        val samples = ShortArray(100) { 100 }
         player.play(
             samples = samples,
             sampleRate = 22050,
@@ -91,7 +91,7 @@ class TtsPlayerTest {
         }
 
         player.play(
-            samples = FloatArray(100),
+            samples = ShortArray(100),
             sampleRate = 22050,
             onStart = { started = true },
             onDone = { done = true }
@@ -116,7 +116,7 @@ class TtsPlayerTest {
         var errorMessage: String? = null
 
         player.play(
-            samples = FloatArray(100),
+            samples = ShortArray(100),
             sampleRate = 22050,
             onDone = { done = true },
             onError = { errorMessage = it }
@@ -138,7 +138,7 @@ class TtsPlayerTest {
         var done = false
 
         player.play(
-            samples = FloatArray(100),
+            samples = ShortArray(100),
             sampleRate = 22050,
             isCancelled = { true },
             onStart = { started = true },
