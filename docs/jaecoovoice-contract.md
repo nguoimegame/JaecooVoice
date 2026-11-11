@@ -30,7 +30,7 @@ Thiết kế: `docs/superpowers/specs/2026-10-30-voice-apk-split-design.md` (rep
 
 ```aidl
 interface IVoiceEngine {
-    int apiVersion();                                        // 2
+    int apiVersion();                                        // 3
     List<String> languages();                                // mã ngôn ngữ có trong danh mục model, vd ["vi"]
     Bundle modelStatus(String language);                     // chặn luồng, nhanh (chỉ đọc đĩa)
     void downloadModel(String language, IModelCallback cb);  // trả về ngay
@@ -45,6 +45,9 @@ interface IVoiceEngine {
     void speak(String text, String language, ITtsCallback cb);
     void stopSpeaking();
     boolean isSpeaking();
+
+    // Từ API 3:
+    void warmUp(String listenLanguage, String speakLanguage);  // trả về ngay; chuỗi rỗng = bỏ qua phần đó
 }
 
 oneway interface IListenCallback {
@@ -119,7 +122,8 @@ oneway interface ITtsCallback {
   - Audio Focus: Khi phát âm, engine xin quyền `AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK` stream `USAGE_ASSISTANT` để hạ âm lượng nhạc nền xe hơi; phát xong hoặc bị dừng thì nhả Audio Focus.
   - `stopSpeaking()`: ngắt lời phát âm lập tức (< 20ms) và nhả Audio Focus.
   - `isSpeaking()`: trả về true nếu đang trong quá trình phát âm.
-- **Đổi phiên bản:** `apiVersion()` hiện là `2`. Khi thêm hàm hay đổi nghĩa thì tăng số, bên gọi kiểm tra trước khi dùng. JaecooApp gặp bản thấp hơn bản nó cần thì coi như JaecooVoice quá cũ và đề nghị cập nhật.
+  - `warmUp(listenLanguage, speakLanguage)` (từ API 3): nạp sẵn engine nhận dạng của `listenLanguage` và engine TTS (kèm espeak-ng) của `speakLanguage` để lượt `listen`/`speak` kế tiếp không phải chờ nạp. Trả về ngay, không có callback. Chuỗi rỗng thì bỏ qua phần đó; model chưa cài, ngôn ngữ lạ hay nạp lỗi cũng không báo gì (lỗi hiện ra ở `listen`/`speak` như thường). Đang có lượt nghe thì phần nhận dạng bị bỏ qua. JaecooApp chỉ gọi khi `apiVersion() >= 3`; bản thấp hơn vẫn dùng được, chỉ không có `warmUp`.
+- **Đổi phiên bản:** `apiVersion()` hiện là `3`. Khi thêm hàm hay đổi nghĩa thì tăng số, bên gọi kiểm tra trước khi dùng. JaecooApp gặp bản thấp hơn bản nó cần thì coi như JaecooVoice quá cũ và đề nghị cập nhật.
 
 ## App khác
 

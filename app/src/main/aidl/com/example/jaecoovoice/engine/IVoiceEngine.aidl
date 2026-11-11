@@ -22,4 +22,7 @@ interface IVoiceEngine {
     void speak(String text, String language, ITtsCallback cb);
     void stopSpeaking();
     boolean isSpeaking();
+
+    // Từ API 3:
+    void warmUp(String listenLanguage, String speakLanguage);   // trả về ngay; chuỗi rỗng = bỏ qua phần đó
 }

@@ -41,6 +41,7 @@ import java.util.concurrent.atomic.AtomicLong
  *
  * Declared in the manifest and named by JaecooApp, so it stays in the root package.
  */
+@Suppress("TooManyFunctions")
 class VoiceEngineService : Service() {
 
     private val main = Handler(Looper.getMainLooper())
@@ -192,6 +193,26 @@ class VoiceEngineService : Service() {
         override fun isSpeaking(): Boolean {
             enforceCaller()
             return activeSpeakingGeneration.get() != 0L || ttsPlayer.isSpeaking
+        }
+
+        override fun warmUp(listenLanguage: String?, speakLanguage: String?) {
+            enforceCaller()
+            warmUpEngines(listenLanguage.orEmpty(), speakLanguage.orEmpty())
+        }
+    }
+
+    /** Loads what the next listen and speak need; an empty language skips that half, a failure is silent. */
+    private fun warmUpEngines(listenLanguage: String, speakLanguage: String) {
+        if (listenLanguage.isNotEmpty()) {
+            core.warmUp(listenLanguage)
+            scheduleRelease()
+        }
+        if (speakLanguage.isNotEmpty()) {
+            main.removeCallbacks(releaseTtsEngine)
+            ttsExecutor.execute {
+                ttsCore.warmUp(speakLanguage)
+                scheduleTtsRelease()
+            }
         }
     }
 
@@ -352,7 +373,7 @@ class VoiceEngineService : Service() {
     private companion object {
         const val TAG = "VoiceEngineService"
         const val TTS_TAG = "SherpaTtsEngine"
-        const val API_VERSION = 2
+        const val API_VERSION = 3
         const val ENGINE_IDLE_MS = 5 * 60 * 1_000L
 
         /** False when the other side is gone. */
