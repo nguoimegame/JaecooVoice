@@ -89,7 +89,7 @@ class TtsCache(
         val body = bytes.size - HEADER_BYTES
         val buffer = ByteBuffer.wrap(bytes)
         val rate = if (body >= 2) buffer.getInt() else 0
-        return if (rate > 0 && body % 2 == 0) Speech(ShortArray(body / 2) { buffer.getShort() }, rate) else null
+        return if (rate in MIN_RATE..MAX_RATE && body % 2 == 0) Speech(ShortArray(body / 2) { buffer.getShort() }, rate) else null
     }
 
     companion object {
@@ -97,6 +97,10 @@ class TtsCache(
         const val MAX_TEXT_LENGTH = 200
         private const val TAG = "TtsCache"
         private const val HEADER_BYTES = 4
+
+        /** A header outside this range is damage; AudioTrack would refuse it every time. */
+        private const val MIN_RATE = 8_000
+        private const val MAX_RATE = 48_000
         private const val SUFFIX = ".pcm"
         private const val TEMP_SUFFIX = ".tmp"
     }

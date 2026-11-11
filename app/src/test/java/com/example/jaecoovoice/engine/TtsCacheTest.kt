@@ -91,4 +91,12 @@ class TtsCacheTest {
         cache.clear()
         assertNull(cache.get("a"))
     }
+
+    @Test
+    fun aFileWithAnImpossibleSampleRateIsDeletedAndMisses() {
+        val cache = cache()
+        cache.put("k", TtsCache.Speech(ShortArray(4), 123_456_789))
+        assertNull(cache.get("k"))
+        assertFalse(File(temp.root, "tts/k.pcm").exists())
+    }
 }
