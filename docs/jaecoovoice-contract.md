@@ -30,7 +30,7 @@ Thiết kế: `docs/superpowers/specs/2026-10-30-voice-apk-split-design.md` (rep
 
 ```aidl
 interface IVoiceEngine {
-    int apiVersion();                                        // 3
+    int apiVersion();                                        // 4
     List<String> languages();                                // mã ngôn ngữ có trong danh mục model, vd ["vi"]
     Bundle modelStatus(String language);                     // chặn luồng, nhanh (chỉ đọc đĩa)
     void downloadModel(String language, IModelCallback cb);  // trả về ngay
@@ -48,6 +48,9 @@ interface IVoiceEngine {
 
     // Từ API 3:
     void warmUp(String listenLanguage, String speakLanguage);  // trả về ngay; chuỗi rỗng = bỏ qua phần đó
+
+    // Từ API 4:
+    void listenWith(String language, in Bundle options, IListenCallback cb);   // như listen, thêm tuỳ chọn (khoá "hotwords": ArrayList<String>)
 }
 
 oneway interface IListenCallback {
@@ -123,7 +126,8 @@ oneway interface ITtsCallback {
   - `stopSpeaking()`: ngắt lời phát âm lập tức (< 20ms) và nhả Audio Focus.
   - `isSpeaking()`: trả về true nếu đang trong quá trình phát âm.
   - `warmUp(listenLanguage, speakLanguage)` (từ API 3): nạp sẵn engine nhận dạng của `listenLanguage` và engine TTS (kèm espeak-ng) của `speakLanguage` để lượt `listen`/`speak` kế tiếp không phải chờ nạp. Trả về ngay, không có callback. Chuỗi rỗng thì bỏ qua phần đó; model chưa cài, ngôn ngữ lạ hay nạp lỗi cũng không báo gì (lỗi hiện ra ở `listen`/`speak` như thường). Đang có lượt nghe thì phần nhận dạng bị bỏ qua. JaecooApp chỉ gọi khi `apiVersion() >= 3`; bản thấp hơn vẫn dùng được, chỉ không có `warmUp`.
-- **Đổi phiên bản:** `apiVersion()` hiện là `3`. Khi thêm hàm hay đổi nghĩa thì tăng số, bên gọi kiểm tra trước khi dùng. JaecooApp gặp bản thấp hơn bản nó cần thì coi như JaecooVoice quá cũ và đề nghị cập nhật.
+- `listenWith(language, options, cb)` (từ API 4): như `listen`, kèm Bundle tuỳ chọn. Khoá `hotwords` (`ArrayList<String>`, tối đa 500 cụm, chữ thường có dấu) là các cụm từ bộ nhận dạng nên ưu tiên nghe (tên app đã cài, câu lệnh mẫu, địa điểm). JaecooVoice tự đổi sang dạng model cần và bỏ cụm nào có chữ model không biết; model không hỗ trợ hotwords (hiện chỉ tiếng Việt có) thì bỏ qua. Khoá lạ bị bỏ qua, thiếu khoá thì như `listen`. JaecooApp gửi danh sách mỗi lượt nghe (JaecooVoice không giữ trạng thái) và chỉ gọi khi `apiVersion() >= 4`. Từ API 4, mọi lượt nghe bằng model tiếng Việt dùng `modified_beam_search` (kể cả `listen`); danh sách hotwords không được ghi vào log. Thiết kế: `docs/superpowers/specs/2026-11-12-voice-hotwords-design.md`.
+- **Đổi phiên bản:** `apiVersion()` hiện là `4`. Khi thêm hàm hay đổi nghĩa thì tăng số, bên gọi kiểm tra trước khi dùng. JaecooApp gặp bản thấp hơn bản nó cần thì coi như JaecooVoice quá cũ và đề nghị cập nhật.
 
 ## App khác
 

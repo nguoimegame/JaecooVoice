@@ -77,7 +77,7 @@ class EngineCore(
     fun loadError(language: String): String? = slot.loadError(language)
 
     /** Starts one listen; [sink] hears exactly one result or error. */
-    fun listen(language: String, sink: ListenSink) {
+    fun listen(language: String, sink: ListenSink, hotwords: List<String> = emptyList()) {
         val session = Session(sink)
         val accepted = synchronized(lock) {
             if (current != null) false else true.also { current = session }
@@ -88,7 +88,7 @@ class EngineCore(
         }
         executor.execute {
             try {
-                run(session, language)
+                run(session, language, hotwords)
             } catch (e: RuntimeException) {
                 Log.e(TAG, "listen failed", e)
                 fail(session, VoiceErrors.RECOGNIZE_FAILED, describe(e))
@@ -117,7 +117,7 @@ class EngineCore(
         if (!busy && model != null && dir != null) decodeExecutor.execute { if (!busy) slot.get(language, model, dir) }
     }
 
-    private fun run(session: Session, language: String) {
+    private fun run(session: Session, language: String, hotwords: List<String>) {
         val model = modelFor(language)
         val dir = model?.let(installedDir)
         when {
@@ -141,14 +141,14 @@ class EngineCore(
                 when {
                     load.isDone && engineOf(load) == null -> failLoad(session, language)
                     session.cancelled -> fail(session, VoiceErrors.CANCELLED)
-                    else -> record(session, Listen(language, load, startedAt))
+                    else -> record(session, Listen(language, load, startedAt, hotwords))
                 }
             }
         }
     }
 
     /** One listen's engine: [load] resolves to it (or null) on the decode thread. */
-    private class Listen(val language: String, val load: FutureTask<SpeechEngine?>, val startedAt: Long)
+    private class Listen(val language: String, val load: FutureTask<SpeechEngine?>, val startedAt: Long, val hotwords: List<String>)
 
     private class Timing(val loadMs: Long, val recordMs: Long)
 
@@ -183,7 +183,7 @@ class EngineCore(
             onSpeechStart = sink::onSpeechStart,
             onPause = { snapshot ->
                 session.speculative?.cancel(false)
-                session.speculative = decodeAhead(listen.load, snapshot)
+                session.speculative = decodeAhead(listen.load, snapshot, listen.hotwords)
             }
         )
         val timing = Timing(recordStart - listen.startedAt, clock() - recordStart)
@@ -216,8 +216,8 @@ class EngineCore(
     }
 
     /** Queues a decode of [snapshot] behind the model load (the decode thread is FIFO). */
-    private fun decodeAhead(load: FutureTask<SpeechEngine?>, snapshot: FloatArray): FutureTask<String> {
-        val task = FutureTask(Callable { load.get()?.transcribe(snapshot)?.trim().orEmpty() })
+    private fun decodeAhead(load: FutureTask<SpeechEngine?>, snapshot: FloatArray, hotwords: List<String>): FutureTask<String> {
+        val task = FutureTask(Callable { load.get()?.transcribe(snapshot, hotwords)?.trim().orEmpty() })
         decodeExecutor.execute(task)
         return task
     }
@@ -244,7 +244,7 @@ class EngineCore(
             }
             val ahead = decodedAhead(session, recorded)
             if (ahead == null) session.speculative?.cancel(false)
-            val result = ahead ?: engine.transcribe(recorded.samples).trim()
+            val result = ahead ?: engine.transcribe(recorded.samples, listen.hotwords).trim()
             val mode = when {
                 ahead != null -> "hit"
                 session.speculative != null -> "miss"
@@ -295,7 +295,7 @@ class EngineCore(
             decodeExecutor = Executors.newSingleThreadExecutor { Thread(it, "voice-decode") },
             modelFor = ModelCatalog::forLanguage,
             installedDir = { model -> ModelStore.dir(app.filesDir, model).takeIf { ModelStore.isInstalled(app.filesDir, model) } },
-            engineFactory = { model, dir -> SherpaSpeechEngine(model, dir) },
+            engineFactory = { model, dir -> SherpaSpeechEngine(model, dir, vocab = HotwordVocab.file(app, model)) },
             mic = MicSetup(
                 sources = PrefsMicSourceStore(app),
                 hasPermission = { app.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED },

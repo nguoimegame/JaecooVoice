@@ -30,7 +30,9 @@ class EngineCoreTest {
 
     private class FakeEngine(private val text: String, private val during: () -> Unit = {}) : SpeechEngine {
         var released = false
-        override fun transcribe(samples: FloatArray): String {
+        val hotwordsSeen = mutableListOf<List<String>>()
+        override fun transcribe(samples: FloatArray, hotwords: List<String>): String {
+            hotwordsSeen += hotwords
             during()
             return text
         }
@@ -113,6 +115,19 @@ class EngineCoreTest {
         val saved = mutableListOf<Pair<Int, String>>()
         core(dump = { samples, text -> saved += samples.size to text }).listenOnce()
         assertEquals(listOf(audio.samples.size to "tăng gió"), saved)
+    }
+
+    @Test
+    fun hotwordsReachTheDecoder() {
+        val core = core()
+        core.listen("vi", RecordingSink(), listOf("spotify", "điều hoà"))
+        assertEquals(listOf(listOf("spotify", "điều hoà")), engines.single().hotwordsSeen)
+    }
+
+    @Test
+    fun listenWithoutHotwordsPassesNone() {
+        core().listenOnce()
+        assertEquals(listOf(emptyList<String>()), engines.single().hotwordsSeen)
     }
 
     @Test
@@ -271,7 +286,7 @@ class EngineCoreTest {
 
     private class SizeEngine : SpeechEngine {
         val decoded = mutableListOf<Int>()
-        override fun transcribe(samples: FloatArray): String {
+        override fun transcribe(samples: FloatArray, hotwords: List<String>): String {
             decoded += samples.size
             return "snap${samples.size}"
         }

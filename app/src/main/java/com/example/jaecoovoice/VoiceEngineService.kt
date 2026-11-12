@@ -13,6 +13,7 @@ import com.example.jaecoovoice.engine.AndroidTrackPlayer
 import com.example.jaecoovoice.engine.CallerCheck
 import com.example.jaecoovoice.engine.CrashTrace
 import com.example.jaecoovoice.engine.EngineCore
+import com.example.jaecoovoice.engine.HotwordFormat
 import com.example.jaecoovoice.engine.IListenCallback
 import com.example.jaecoovoice.engine.IModelCallback
 import com.example.jaecoovoice.engine.ITtsCallback
@@ -117,6 +118,15 @@ class VoiceEngineService : Service() {
             activeSpeakingGeneration.set(0L)
             ttsPlayer.stop()
             core.listen(language.orEmpty(), RemoteListenSink(cb))
+        }
+
+        override fun listenWith(language: String?, options: Bundle?, cb: IListenCallback?) {
+            enforceCaller()
+            if (cb == null) return
+            speechGeneration.incrementAndGet()
+            activeSpeakingGeneration.set(0L)
+            ttsPlayer.stop()
+            core.listen(language.orEmpty(), RemoteListenSink(cb), hotwordsOf(options))
         }
 
         override fun cancel() {
@@ -373,7 +383,13 @@ class VoiceEngineService : Service() {
     private companion object {
         const val TAG = "VoiceEngineService"
         const val TTS_TAG = "SherpaTtsEngine"
-        const val API_VERSION = 3
+        const val API_VERSION = 4
+
+        /** `listenWith` option: ArrayList<String> of phrases to favour while recognizing. */
+        const val KEY_HOTWORDS = "hotwords"
+
+        /** Hotwords of a `listenWith` call; a missing or wrongly typed value is no hotwords. */
+        fun hotwordsOf(options: Bundle?): List<String> = HotwordFormat.clean(options?.getStringArrayList(KEY_HOTWORDS))
         const val ENGINE_IDLE_MS = 5 * 60 * 1_000L
 
         /** False when the other side is gone. */

@@ -20,7 +20,12 @@ data class VoiceModel(
     val archiveNames: Map<String, String> = emptyMap(),
     val family: ModelFamily = ModelFamily.TRANSDUCER,
     /** Other languages this one model also recognizes; it is downloaded and stored once. */
-    val otherLanguages: Set<String> = emptySet()
+    val otherLanguages: Set<String> = emptySet(),
+    /**
+     * Asset name of this model's BPE vocabulary (`piece<TAB>score` per line, exported from the model's
+     * `bpe.model`). Only a model that has one can bias its decoding with hotwords; see [HotwordVocab].
+     */
+    val hotwordVocabAsset: String? = null
 ) {
     val languages: Set<String> get() = setOf(language) + otherLanguages
 }
@@ -61,7 +66,8 @@ object ModelCatalog {
         sha256 = "da8b637947091829d7ee9eda23da2a4ec7caa399233a3f4e34eb719fb2ea6b9b",
         sizeBytes = 26_442_384L,
         archiveRoot = "sherpa-onnx-zipformer-vi-30M-int8-2026-02-09",
-        files = setOf(ENCODER, DECODER, JOINER, TOKENS)
+        files = setOf(ENCODER, DECODER, JOINER, TOKENS),
+        hotwordVocabAsset = "hotwords/zipformer-vi-30M-int8-2026-02-09.vocab"
     )
 
     /** English zipformer small from k2-fsa/sherpa-onnx (Apache-2.0); int8 encoder and joiner. */

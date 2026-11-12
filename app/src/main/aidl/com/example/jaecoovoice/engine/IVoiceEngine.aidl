@@ -25,4 +25,7 @@ interface IVoiceEngine {
 
     // Từ API 3:
     void warmUp(String listenLanguage, String speakLanguage);   // trả về ngay; chuỗi rỗng = bỏ qua phần đó
+
+    // Từ API 4:
+    void listenWith(String language, in Bundle options, IListenCallback cb);   // như listen, thêm tuỳ chọn (khoá "hotwords": ArrayList<String>)
 }

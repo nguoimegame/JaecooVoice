@@ -1,5 +1,6 @@
 package com.example.jaecoovoice.engine
 
+import android.util.Log
 import com.k2fsa.sherpa.onnx.FeatureConfig
 import com.k2fsa.sherpa.onnx.OfflineModelConfig
 import com.k2fsa.sherpa.onnx.OfflineOmnilingualAsrCtcModelConfig
@@ -11,8 +12,11 @@ import java.io.File
 
 /** Turns one utterance (float -1..1, 16 kHz) into text. */
 interface SpeechEngine {
-    /** Blocks the calling thread until decoding is done. */
-    fun transcribe(samples: FloatArray): String
+    /**
+     * Blocks the calling thread until decoding is done. [hotwords] are phrases the decoder should favour;
+     * an engine that cannot use them ignores them.
+     */
+    fun transcribe(samples: FloatArray, hotwords: List<String> = emptyList()): String
 
     fun release()
 }
@@ -22,20 +26,42 @@ interface SpeechEngine {
  * config. Building the recognizer takes about a second, so [EngineCore] keeps one; [transcribe]
  * is serialized.
  */
-class SherpaSpeechEngine(model: VoiceModel, modelDir: File, numThreads: Int = THREADS) : SpeechEngine {
+class SherpaSpeechEngine(
+    model: VoiceModel,
+    modelDir: File,
+    numThreads: Int = THREADS,
+    /** The model's BPE vocabulary ([HotwordVocab]); null = greedy search, no hotwords. */
+    vocab: File? = null
+) : SpeechEngine {
+
+    private val decoding = decodingFor(model.family, vocab)
+
+    /** Letters the model has tokens for; hotwords with any other letter are dropped before they reach the native code. */
+    private val alphabet: Set<Char> = if (decoding.beam) HotwordFormat.alphabet(File(modelDir, ModelCatalog.TOKENS)) else emptySet()
 
     private val recognizer = OfflineRecognizer(
         null,
         OfflineRecognizerConfig(
             featConfig = FeatureConfig(sampleRate = AudioCapture.SAMPLE_RATE, featureDim = FEATURE_DIM),
-            modelConfig = modelConfig(model, modelDir, numThreads),
-            decodingMethod = "greedy_search"
+            modelConfig = modelConfig(model, modelDir, numThreads).also {
+                if (decoding.beam) {
+                    it.modelingUnit = "bpe"
+                    it.bpeVocab = vocab?.absolutePath.orEmpty()
+                }
+            },
+            decodingMethod = decoding.method,
+            maxActivePaths = MAX_ACTIVE_PATHS,
+            hotwordsScore = HOTWORDS_SCORE
         )
     )
 
     @Synchronized
-    override fun transcribe(samples: FloatArray): String {
-        val stream = recognizer.createStream()
+    override fun transcribe(samples: FloatArray, hotwords: List<String>): String {
+        val encoded = if (decoding.beam && hotwords.isNotEmpty()) HotwordFormat.encode(hotwords, alphabet) else ""
+        if (hotwords.isNotEmpty()) {
+            Log.i(TAG, "hotwords sent=${hotwords.size} used=${encoded.lines().count { it.isNotEmpty() }} beam=${decoding.beam}")
+        }
+        val stream = if (encoded.isEmpty()) recognizer.createStream() else recognizer.createStream(encoded)
         return try {
             stream.acceptWaveform(samples, AudioCapture.SAMPLE_RATE)
             recognizer.decode(stream)
@@ -51,7 +77,12 @@ class SherpaSpeechEngine(model: VoiceModel, modelDir: File, numThreads: Int = TH
     }
 
     companion object {
+        private const val TAG = "SherpaSpeechEngine"
         private const val THREADS = 2
+
+        /** Beam width and the bonus a hotword token gets; the only knobs to turn when hotwords force wrong words. */
+        private const val MAX_ACTIVE_PATHS = 4
+        private const val HOTWORDS_SCORE = 1.5f
         private const val FEATURE_DIM = 80
 
         internal fun modelConfig(model: VoiceModel, dir: File, numThreads: Int): OfflineModelConfig {
