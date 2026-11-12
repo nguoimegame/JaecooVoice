@@ -81,12 +81,16 @@ class TtsCore(
      */
     @Synchronized
     fun warmUp(language: String): Boolean {
-        val model = TtsCatalog.forLanguage(language)?.takeIf { TtsModelStore.isInstalled(filesDir, it) }
-        val engine = model?.let { slot.get(language, it, TtsModelStore.dir(filesDir, it)) }
+        val model = TtsCatalog.forLanguage(language)?.takeIf { TtsModelStore.isInstalled(filesDir, it) } ?: return false
+        CrashTrace.mark(filesDir, "warm up engine")
+        val engine = slot.get(language, model, TtsModelStore.dir(filesDir, model))
         if (engine != null && engine !== primedEngine) {
+            CrashTrace.mark(filesDir, "espeak prime")
             engine.prime()
             primedEngine = engine
         }
+        // Loaded (or failed cleanly): nothing in flight, or the next speak reports a death that never was.
+        CrashTrace.mark(filesDir, CrashTrace.DONE)
         if (engine != null) lastUsedAt = clock()
         return engine != null
     }

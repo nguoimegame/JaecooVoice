@@ -4,6 +4,8 @@ import android.app.ActivityManager
 import android.app.ApplicationExitInfo
 import android.content.Context
 import android.os.Build
+import android.os.Process
+import android.os.SystemClock
 import androidx.annotation.RequiresApi
 import java.io.File
 
@@ -35,25 +37,39 @@ object CrashTrace {
     @Suppress("TooGenericExceptionCaught", "SwallowedException")
     fun takeReport(context: Context): String? = try {
         val dir = context.filesDir
-        val trace = File(dir, TRACE_FILE).takeIf { it.isFile }?.readText()?.lines().orEmpty()
-        val step = trace.getOrNull(0).orEmpty()
-        val stepAt = trace.getOrNull(1)?.toLongOrNull() ?: 0L
+        val now = System.currentTimeMillis()
+        val interrupted = interruption(dir, processStartMs(now), now)
         val exit = lastExit(context, File(dir, REPORTED_FILE))
-        val interrupted = step.isNotEmpty() && step != DONE
         when {
-            exit == null && !interrupted -> null
-            else -> {
-                if (interrupted) mark(dir, DONE)
-                buildString {
-                    append("previous run died")
-                    if (interrupted) append(" during '$step' (${(System.currentTimeMillis() - stepAt) / 1000}s before)")
-                    if (exit != null) append("; exit: $exit")
-                }
+            exit == null && interrupted == null -> null
+            else -> buildString {
+                append("previous run died")
+                if (interrupted != null) append(" $interrupted")
+                if (exit != null) append("; exit: $exit")
             }
         }
     } catch (e: Exception) {
         null
     }
+
+    /**
+     * The step an earlier process left unfinished, as "during '<step>' (Ns before)", and clears
+     * it; null when there is none. A step marked after [processStartMs] belongs to this process
+     * (a warmUp still loading on the TTS thread), so it is no death and is left alone.
+     */
+    internal fun interruption(filesDir: File, processStartMs: Long, nowMs: Long): String? {
+        val trace = File(filesDir, TRACE_FILE).takeIf { it.isFile }?.readText()?.lines().orEmpty()
+        val step = trace.getOrNull(0).orEmpty()
+        val stepAt = trace.getOrNull(1)?.toLongOrNull() ?: 0L
+        if (step.isEmpty() || step == DONE || stepAt >= processStartMs) return null
+        mark(filesDir, DONE)
+        return "during '$step' (${(nowMs - stepAt) / MS_PER_S}s before)"
+    }
+
+    /** Wall-clock time this process started, comparable with the breadcrumb's timestamp. */
+    private fun processStartMs(nowMs: Long): Long = nowMs - (SystemClock.elapsedRealtime() - Process.getStartElapsedRealtime())
+
+    private const val MS_PER_S = 1000L
 
     private fun lastExit(context: Context, reported: File): String? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
         lastExitApi30(context, reported)

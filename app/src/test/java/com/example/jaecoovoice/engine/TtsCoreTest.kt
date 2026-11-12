@@ -298,4 +298,33 @@ class TtsCoreTest {
         core.releaseIfIdle()
         assertTrue(fakeEngine.released)
     }
+
+    /** A warmUp that loaded fine must not look like a death during the load to the next speak. */
+    @Test
+    fun warmUpLeavesNoStepInFlight() {
+        val core = TtsCore(
+            filesDir = temp.root,
+            slot = TtsEngineSlot(factory = { _, _ ->
+                CrashTrace.mark(temp.root, "sherpa load model")
+                FakeTtsEngine()
+            })
+        )
+        markInstalled(temp.root, TtsCatalog.VI_VAIS1000)
+        assertTrue(core.warmUp("vi"))
+        assertEquals(CrashTrace.DONE, File(temp.root, "tts-trace.txt").readLines().first())
+    }
+
+    @Test
+    fun failedWarmUpLeavesNoStepInFlight() {
+        val core = TtsCore(
+            filesDir = temp.root,
+            slot = TtsEngineSlot(factory = { _, _ ->
+                CrashTrace.mark(temp.root, "sherpa load model")
+                error("bad")
+            })
+        )
+        markInstalled(temp.root, TtsCatalog.VI_VAIS1000)
+        assertFalse(core.warmUp("vi"))
+        assertEquals(CrashTrace.DONE, File(temp.root, "tts-trace.txt").readLines().first())
+    }
 }
