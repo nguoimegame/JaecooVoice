@@ -31,7 +31,8 @@ class EngineCore(
     private val installedDir: (VoiceModel) -> File?,
     engineFactory: (VoiceModel, File) -> SpeechEngine,
     private val mic: MicSetup,
-    private val clock: () -> Long = System::currentTimeMillis
+    private val clock: () -> Long = System::currentTimeMillis,
+    private val dump: UtteranceDump = UtteranceDump.NONE
 ) {
 
     /** How to reach the microphone: permission, a recorder per source, and the current source. */
@@ -256,6 +257,7 @@ class EngineCore(
             fail(session, VoiceErrors.RECOGNIZE_FAILED, describe(e))
             return
         }
+        dump.save(recorded.samples, text)
         when {
             session.cancelled -> fail(session, VoiceErrors.CANCELLED)
             text.isEmpty() -> noSpeech(session, VoiceErrors.NO_SPEECH, capture)
@@ -298,7 +300,8 @@ class EngineCore(
                 sources = PrefsMicSourceStore(app),
                 hasPermission = { app.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED },
                 recorderFactory = { source -> AudioCapture(source) }
-            )
+            ),
+            dump = UtteranceDump.forApp(app)
         )
     }
 }

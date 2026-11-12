@@ -87,7 +87,8 @@ class EngineCoreTest {
         executor: Executor = now,
         decodeExecutor: Executor = now,
         installed: Boolean = true,
-        permission: Boolean = true
+        permission: Boolean = true,
+        dump: UtteranceDump = UtteranceDump.NONE
     ) = EngineCore(
         executor = executor,
         decodeExecutor = decodeExecutor,
@@ -101,10 +102,18 @@ class EngineCoreTest {
                 recorderFactoryCalls++
                 recorder()
             }
-        )
+        ),
+        dump = dump
     )
 
     private fun EngineCore.listenOnce(language: String = "vi"): RecordingSink = RecordingSink().also { listen(language, it) }
+
+    @Test
+    fun heardUtteranceIsHandedToTheDump() {
+        val saved = mutableListOf<Pair<Int, String>>()
+        core(dump = { samples, text -> saved += samples.size to text }).listenOnce()
+        assertEquals(listOf(audio.samples.size to "tăng gió"), saved)
+    }
 
     @Test
     fun heardSentenceEndsWithOneResult() {
