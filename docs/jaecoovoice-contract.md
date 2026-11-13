@@ -21,7 +21,7 @@ Thiết kế: `docs/superpowers/specs/2026-10-30-voice-apk-split-design.md` (rep
 | quyền | xin `com.example.jaecoovoice.permission.ENGINE` | bảo vệ `VoiceEngineService` |
 
 - Quyền `protectionLevel="signature"`, **cả hai app đều khai báo**, để cài app nào trước cũng được.
-- Hai APK ký cùng một khoá: khoá của JaecooApp, SHA-256 chứng chỉ `139f1d19f55e5f9b6cb5bd510df1e1266128463e41da59ef4540295178dab85a`.
+- Hai APK ký cùng một khoá: khoá của JaecooApp, SHA-256 chứng chỉ hiện tại `89d5c47f05ff47e6bb2728bd9348c33eaf6503fda9600b1a0b5d6b262b9a12d8` (khoá xoay từ khoá cũ `139f1d19f55e5f9b6cb5bd510df1e1266128463e41da59ef4540295178dab85a`, xem `signing/`).
 - Mọi hàm của `VoiceEngineService` kiểm tra package của `Binder.getCallingUid()` phải là `com.example.jaecooapp`, sai thì ném `SecurityException`.
 - Mỗi app khai báo package của app kia trong `<queries>`.
 - JaecooApp bind bằng `BIND_AUTO_CREATE | BIND_INCLUDE_CAPABILITIES`. Dịch vụ nền trước loại `microphone` của JaecooApp nhờ đó truyền quyền dùng mic sang tiến trình JaecooVoice.

@@ -8,6 +8,8 @@
 # with Contents: write and Actions: write.
 # And JAECOO_KEYSTORE_B64: JaecooApp's app/debug.keystore in base64 (`base64 -w0 debug.keystore`).
 # The key is never committed to this public repository.
+# Key rotation: JAECOO_RELEASE_KEYSTORE_BASE64 and JAECOO_RELEASE_KEYSTORE_PASSWORD hold the new
+# release key (alias jaecoo-release); signing/jaecoo.lineage chains the old key to it.
 
 name: JaecooVoice release
 
@@ -40,7 +42,9 @@ concurrency:
 env:
   # SHA-256 of JaecooApp's signing certificate. JaecooApp refuses a JaecooVoice signed with
   # anything else, so such a build is never published.
-  EXPECTED_CERT_SHA256: 139f1d19f55e5f9b6cb5bd510df1e1266128463e41da59ef4540295178dab85a
+  EXPECTED_CERT_SHA256: 89d5c47f05ff47e6bb2728bd9348c33eaf6503fda9600b1a0b5d6b262b9a12d8
+  # The key JaecooApp used before the rotation; it must be the first link of the lineage.
+  OLD_CERT_SHA256: 139f1d19f55e5f9b6cb5bd510df1e1266128463e41da59ef4540295178dab85a
 
 jobs:
   release:
@@ -97,11 +101,45 @@ jobs:
           -PvoiceVersionName=${{ steps.version.outputs.name }}
           -PvoiceVersionCode=${{ steps.version.outputs.code }}
 
+      - name: Decode the release key
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.JAECOO_RELEASE_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$RELEASE_KEYSTORE_BASE64" ]; then
+            echo "::error::Secret JAECOO_RELEASE_KEYSTORE_BASE64 is not set"
+            exit 1
+          fi
+          echo "$RELEASE_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/jaecoo-release.p12"
+
+      # Key rotation (JaecooApp docs/release-signing.md): sign with the old key (v1/v2) and the
+      # release key (v3 with signing/jaecoo.lineage), so a device that has the old key updates.
+      - name: Rotate the signing key
+        env:
+          OLD_KS_PASS: android
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.JAECOO_RELEASE_KEYSTORE_PASSWORD }}
+        run: |
+          APK=app/build/outputs/apk/release/app-release.apk
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n 1)
+          "$APKSIGNER" sign \
+            --ks "$JAECOO_KEYSTORE" --ks-pass env:OLD_KS_PASS --ks-key-alias "androiddebugkey" --key-pass env:OLD_KS_PASS \
+            --next-signer \
+            --ks "$RUNNER_TEMP/jaecoo-release.p12" --ks-pass env:RELEASE_KEYSTORE_PASSWORD --ks-key-alias jaecoo-release \
+            --lineage signing/jaecoo.lineage \
+            --rotation-min-sdk-version 28 \
+            --out "$RUNNER_TEMP/rotated.apk" "$APK"
+          mv "$RUNNER_TEMP/rotated.apk" "$APK"
+          rm -f "$RUNNER_TEMP/jaecoo-release.p12" "$APK.idsig"
+
       - name: Verify the signing certificate
         run: |
           APK=app/build/outputs/apk/release/app-release.apk
           APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n 1)
-          ACTUAL=$("$APKSIGNER" verify --print-certs "$APK" | grep -m1 'SHA-256 digest' | awk '{print $NF}')
+          ACTUAL=$("$APKSIGNER" verify --print-certs --min-sdk-version 29 "$APK" | grep -m1 'SHA-256 digest' | awk '{print $NF}')
+          LINEAGE=$("$APKSIGNER" lineage --in "$APK" --print-certs | grep 'certificate SHA-256 digest' | awk '{print $NF}' | tr '\n' ' ')
+          case "$LINEAGE" in
+            "$OLD_CERT_SHA256 $EXPECTED_CERT_SHA256 ") ;;
+            *) echo "::error::Lineage is $LINEAGE, expected the old key then the release key"; exit 1 ;;
+          esac
           if [ "$ACTUAL" != "$EXPECTED_CERT_SHA256" ]; then
             echo "::error::APK is signed with $ACTUAL, expected JaecooApp's key"
             exit 1
