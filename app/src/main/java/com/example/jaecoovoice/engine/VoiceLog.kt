@@ -29,9 +29,12 @@ object VoiceLog {
     fun init(context: Context, version: String, versionCode: Long) {
         if (client != null) return
         val app = context.applicationContext
+        val current = LogRun(version, versionCode, UUID.randomUUID().toString().replace("-", "").take(RUN_CHARS))
+        val previous = RunMarker.read(app.filesDir)
+        RunMarker.write(app.filesDir, current)
         val created = LogSinkClient(
             send = { run, events -> push(app, run, events) },
-            run = LogRun(version, versionCode, UUID.randomUUID().toString().replace("-", "").take(RUN_CHARS)),
+            run = current,
             clock = System::currentTimeMillis,
             uptime = SystemClock::elapsedRealtime,
             executor = Executors.newSingleThreadExecutor { Thread(it, "voice-log").apply { isDaemon = true } }
@@ -39,7 +42,14 @@ object VoiceLog {
         client = created
         Thread.setDefaultUncaughtExceptionHandler(VoiceCrashHandler(Thread.getDefaultUncaughtExceptionHandler(), created::crash))
         i("AppStart", "process started")
-        PreviousRun.report = CrashTrace.takeReport(app)?.also { e("ProcessExit", "previous run: $it") }
+        PreviousRun.report = CrashTrace.takeReport(app)?.also { created.log('E', "ProcessExit", "previous run: $it", context = deadRun(previous)) }
+    }
+
+    /** The context of the run that died, so its death is filed under it and not under the run reporting it. */
+    private fun deadRun(previous: LogRun?): Map<String, Any?> = if (previous == null) {
+        mapOf("run" to "unknown")
+    } else {
+        mapOf("run" to previous.run, "version" to previous.version, "versionCode" to previous.versionCode)
     }
 
     fun i(tag: String, msg: String) {
