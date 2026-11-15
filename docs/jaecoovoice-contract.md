@@ -8,6 +8,7 @@ Thiết kế: `docs/superpowers/specs/2026-10-30-voice-apk-split-design.md` (rep
 
 - Không bên nào import code của bên kia. Hai bên chỉ chép **file `.aidl`** (giống hệt từng byte, cùng package `com.example.jaecoovoice.engine`) và các hằng số dưới đây.
 - Giá trị qua kênh: `String`, `int`, `long`, `float`, `boolean`, `Bundle`, `List` của chúng, và interface callback.
+- Log (cảnh báo, lỗi, crash) không đi qua hợp đồng này: JaecooVoice đẩy chúng vào cửa nhận log của JaecooApp theo [log-sink-contract.md](log-sink-contract.md).
 
 ## Package, service, quyền
 
