@@ -2,7 +2,6 @@ package com.example.jaecoovoice.engine
 
 import android.content.Context
 import android.content.pm.ApplicationInfo
-import android.util.Log
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.nio.ByteBuffer
@@ -30,7 +29,7 @@ fun interface UtteranceDump {
                     try {
                         WavDump.write(dir, samples, text, System.currentTimeMillis())
                     } catch (e: java.io.IOException) {
-                        Log.w("UtteranceDump", "could not save the utterance", e)
+                        VoiceLog.w("UtteranceDump", "could not save the utterance", e)
                     }
                 }
             }

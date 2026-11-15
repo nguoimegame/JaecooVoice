@@ -6,7 +6,6 @@ import android.media.AudioFocusRequest
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
-import android.util.Log
 
 /**
  * Controller for requesting and abandoning audio focus with ducking.
@@ -39,7 +38,7 @@ class AndroidAudioFocusController(private val audioManager: AudioManager) : Audi
                 focusRequest = request
                 audioManager.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
             } catch (e: Exception) {
-                Log.w(TAG, "Audio focus request failed", e)
+                VoiceLog.w(TAG, "Audio focus request failed", e)
                 false
             }
         }
@@ -51,7 +50,7 @@ class AndroidAudioFocusController(private val audioManager: AudioManager) : Audi
                 try {
                     audioManager.abandonAudioFocusRequest(it)
                 } catch (e: Exception) {
-                    Log.w(TAG, "Audio focus abandon failed", e)
+                    VoiceLog.w(TAG, "Audio focus abandon failed", e)
                 }
                 focusRequest = null
             }
@@ -226,7 +225,7 @@ class TtsPlayer(
         }
         try {
             // The car may mute a stream that has no focus; play anyway, but leave a trace.
-            if (!focusController.requestFocus()) Log.w(TAG, "audio focus not granted, playing anyway")
+            if (!focusController.requestFocus()) VoiceLog.w(TAG, "audio focus not granted, playing anyway")
             if (cancelled || isCancelled()) return
             onStart()
             trackPlayer.play(samples, sampleRate) { cancelled || isCancelled() }

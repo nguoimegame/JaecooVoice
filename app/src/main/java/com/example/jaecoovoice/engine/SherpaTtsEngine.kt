@@ -1,6 +1,5 @@
 package com.example.jaecoovoice.engine
 
-import android.util.Log
 import com.k2fsa.sherpa.onnx.GenerationConfig
 import com.k2fsa.sherpa.onnx.OfflineTts
 import com.k2fsa.sherpa.onnx.OfflineTtsConfig
@@ -101,7 +100,7 @@ class SherpaTtsEngine(
         tts = OfflineTts(null, config)
         val modelLang = tts.lang()
         if (model.frontend == TtsFrontend.ESPEAK && modelLang.isNotEmpty() && modelLang != model.espeakVoice) {
-            Log.w(TAG, "${model.id} says espeak voice '$modelLang', catalog has '${model.espeakVoice}'")
+            VoiceLog.w(TAG, "${model.id} says espeak voice '$modelLang', catalog has '${model.espeakVoice}'")
         }
     }
 
@@ -152,7 +151,7 @@ class SherpaTtsEngine(
             }
             streamed
         } catch (e: Exception) {
-            Log.e(TAG, "generateStream failed", e)
+            VoiceLog.e(TAG, "generateStream failed", e)
             TtsEngine.SYNTHESIS_FAILED
         }
     }
@@ -199,10 +198,10 @@ class TtsEngineSlot(
                 this.language = language
             }
         } catch (e: LinkageError) {
-            Log.e(TAG, "sherpa-onnx native library missing for TTS", e)
+            VoiceLog.e(TAG, "sherpa-onnx native library missing for TTS", e)
             null
         } catch (e: RuntimeException) {
-            Log.e(TAG, "Cannot load TTS model for $language", e)
+            VoiceLog.e(TAG, "Cannot load TTS model for $language", e)
             null
         }
     }

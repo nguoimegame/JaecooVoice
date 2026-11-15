@@ -18,6 +18,7 @@
 
     <!-- No launcher activity: JaecooApp installs, configures and drives this app. -->
     <application
+        android:name=".JaecooVoiceApp"
         android:allowBackup="false"
         android:label="@string/app_name"
         android:supportsRtl="true">

@@ -90,7 +90,7 @@ class EngineCore(
             try {
                 run(session, language, hotwords)
             } catch (e: RuntimeException) {
-                Log.e(TAG, "listen failed", e)
+                VoiceLog.e(TAG, "listen failed", e)
                 fail(session, VoiceErrors.RECOGNIZE_FAILED, describe(e))
             }
         }
@@ -156,14 +156,14 @@ class EngineCore(
     private fun loadEngine(language: String, model: VoiceModel, dir: File): SpeechEngine? = try {
         slot.get(language, model, dir)
     } catch (e: Error) {
-        Log.e(TAG, "cannot load speech model", e)
+        VoiceLog.e(TAG, "cannot load speech model", e)
         null
     }
 
     private fun engineOf(load: FutureTask<SpeechEngine?>): SpeechEngine? = try {
         load.get()
     } catch (e: ExecutionException) {
-        Log.e(TAG, "speech model load failed", e)
+        VoiceLog.e(TAG, "speech model load failed", e)
         null
     }
 
@@ -228,7 +228,7 @@ class EngineCore(
         return try {
             task.get()
         } catch (e: ExecutionException) {
-            Log.w(TAG, "decode ahead failed", e)
+            VoiceLog.w(TAG, "decode ahead failed", e)
             null
         }
     }
@@ -253,7 +253,7 @@ class EngineCore(
             Log.i(TAG, "listen load=${timing.loadMs}ms record=${timing.recordMs}ms decode=${clock() - decodeStart}ms speculative=$mode")
             result
         } catch (e: RuntimeException) {
-            Log.e(TAG, "transcribe failed", e)
+            VoiceLog.e(TAG, "transcribe failed", e)
             fail(session, VoiceErrors.RECOGNIZE_FAILED, describe(e))
             return
         }

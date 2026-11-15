@@ -6,13 +6,13 @@ import android.os.RemoteException
 import android.speech.RecognitionService
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
-import android.util.Log
 import com.example.jaecoovoice.engine.EngineCore
 import com.example.jaecoovoice.engine.LanguageResolver
 import com.example.jaecoovoice.engine.ListenSink
 import com.example.jaecoovoice.engine.ModelCatalog
 import com.example.jaecoovoice.engine.ModelStore
 import com.example.jaecoovoice.engine.RecognitionErrors
+import com.example.jaecoovoice.engine.VoiceLog
 import java.util.Locale
 
 /**
@@ -62,7 +62,7 @@ class JaecooRecognitionService : RecognitionService() {
             callback.results(Bundle().apply { putStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION, arrayListOf(text)) })
         }
         override fun onError(code: Int, detail: String) {
-            Log.w(TAG, "listen failed for another app: code=$code detail=$detail")
+            VoiceLog.w(TAG, "listen failed for another app: code=$code detail=$detail")
             RecognitionErrors.toSpeechRecognizer(code)?.let { error -> send { callback.error(error) } }
         }
     }
@@ -72,7 +72,7 @@ class JaecooRecognitionService : RecognitionService() {
         try {
             call()
         } catch (e: RemoteException) {
-            Log.w(TAG, "caller is gone", e)
+            VoiceLog.w(TAG, "caller is gone", e)
             core.cancel()
         }
     }

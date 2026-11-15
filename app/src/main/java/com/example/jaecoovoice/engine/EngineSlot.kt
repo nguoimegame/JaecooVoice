@@ -1,6 +1,5 @@
 package com.example.jaecoovoice.engine
 
-import android.util.Log
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
@@ -29,11 +28,11 @@ internal class EngineSlot(private val factory: (VoiceModel, File) -> SpeechEngin
             }
         } catch (e: LinkageError) {
             // UnsatisfiedLinkError (no .so for this ABI) and NoClassDefFoundError.
-            Log.e(TAG, "sherpa-onnx native library missing", e)
+            VoiceLog.e(TAG, "sherpa-onnx native library missing", e)
             loadErrors[language] = describe(e)
             null
         } catch (e: RuntimeException) {
-            Log.e(TAG, "cannot load speech model", e)
+            VoiceLog.e(TAG, "cannot load speech model", e)
             loadErrors[language] = describe(e)
             null
         }

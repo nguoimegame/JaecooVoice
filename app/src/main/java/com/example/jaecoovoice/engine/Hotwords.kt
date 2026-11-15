@@ -1,7 +1,6 @@
 package com.example.jaecoovoice.engine
 
 import android.content.Context
-import android.util.Log
 import java.io.File
 import java.io.IOException
 import java.util.Locale
@@ -29,7 +28,7 @@ internal object HotwordVocab {
             if (target.length() == 0L) copy(context, asset, target)
             target.takeIf { it.length() > 0L }
         } catch (e: IOException) {
-            Log.w(TAG, "cannot copy the vocabulary of ${model.id}", e)
+            VoiceLog.w(TAG, "cannot copy the vocabulary of ${model.id}", e)
             null
         }
     }

@@ -6,9 +6,9 @@ import android.speech.tts.SynthesisRequest
 import android.speech.tts.TextToSpeech
 import android.speech.tts.TextToSpeechService
 import android.speech.tts.Voice
-import android.util.Log
 import com.example.jaecoovoice.engine.TtsCatalog
 import com.example.jaecoovoice.engine.TtsCore
+import com.example.jaecoovoice.engine.VoiceLog
 import java.util.Locale
 
 /**
@@ -87,7 +87,7 @@ class JaecooTtsService : TextToSpeechService() {
             TtsCore.SynthResult.Spoken -> callback.done()
             TtsCore.SynthResult.Cancelled -> Unit
             is TtsCore.SynthResult.Failed -> {
-                Log.w(TAG, result.reason)
+                VoiceLog.w(TAG, result.reason)
                 val code = if (result.reason.startsWith("tts model not installed")) {
                     TextToSpeech.ERROR_NOT_INSTALLED_YET
                 } else {

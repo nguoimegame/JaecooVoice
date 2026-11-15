@@ -1,6 +1,5 @@
 package com.example.jaecoovoice.engine
 
-import android.util.Log
 import java.io.File
 
 /**
@@ -18,11 +17,11 @@ class EspeakPhonemizer(private val dataDir: File) {
         val lines = try {
             EspeakNative.nativeClauses(text, voice)
         } catch (e: UnsatisfiedLinkError) {
-            Log.w(TAG, "libjaecoo-espeak missing", e)
+            VoiceLog.w(TAG, "libjaecoo-espeak missing", e)
             return null
         }
         if (lines.isEmpty()) {
-            Log.w(TAG, "espeak-ng has no voice '$voice' in $dataDir")
+            VoiceLog.w(TAG, "espeak-ng has no voice '$voice' in $dataDir")
             return null
         }
         lines.map { EspeakClause.parse(it) }
@@ -31,7 +30,7 @@ class EspeakPhonemizer(private val dataDir: File) {
     private fun ensureInit(): Boolean {
         val path = dataDir.absolutePath
         when {
-            !dataDir.isDirectory -> Log.w(TAG, "espeak-ng-data missing: $path")
+            !dataDir.isDirectory -> VoiceLog.w(TAG, "espeak-ng-data missing: $path")
             initialisedDir != path -> initialise(path)
         }
         return dataDir.isDirectory && initialisedDir == path
@@ -42,9 +41,9 @@ class EspeakPhonemizer(private val dataDir: File) {
             if (initialisedDir != null) EspeakNative.nativeTerminate()
             initialisedDir = null
             val rate = EspeakNative.nativeInit(path)
-            if (rate > 0) initialisedDir = path else Log.w(TAG, "espeak_Initialize failed ($rate) for $path")
+            if (rate > 0) initialisedDir = path else VoiceLog.w(TAG, "espeak_Initialize failed ($rate) for $path")
         } catch (e: UnsatisfiedLinkError) {
-            Log.w(TAG, "libjaecoo-espeak missing", e)
+            VoiceLog.w(TAG, "libjaecoo-espeak missing", e)
         }
     }
 

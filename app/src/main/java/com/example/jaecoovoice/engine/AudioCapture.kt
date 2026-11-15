@@ -221,10 +221,10 @@ private fun tryOpenCandidate(cand: Int, bufferSize: Int): AudioRecord? {
 private fun tryCreateRecorder(cand: Int, bufferSize: Int): AudioRecord? = try {
     AudioRecord(cand, AudioCapture.SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufferSize)
 } catch (e: SecurityException) {
-    Log.w("AudioCapture", "RECORD_AUDIO denied for source $cand", e)
+    VoiceLog.w("AudioCapture", "RECORD_AUDIO denied for source $cand", e)
     null
 } catch (e: IllegalArgumentException) {
-    Log.w("AudioCapture", "Source $cand not supported on this device", e)
+    VoiceLog.w("AudioCapture", "Source $cand not supported on this device", e)
     null
 }
 
@@ -237,7 +237,7 @@ private fun startActiveRecording(recorder: AudioRecord, cand: Int): Boolean {
         recorder.startRecording()
         recorder.recordingState == AudioRecord.RECORDSTATE_RECORDING
     } catch (e: IllegalStateException) {
-        Log.w("AudioCapture", "Cannot startRecording for source $cand", e)
+        VoiceLog.w("AudioCapture", "Cannot startRecording for source $cand", e)
         false
     }
     if (!ok) recorder.release()

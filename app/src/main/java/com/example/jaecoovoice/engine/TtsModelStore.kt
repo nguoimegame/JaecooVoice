@@ -1,6 +1,5 @@
 package com.example.jaecoovoice.engine
 
-import android.util.Log
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
@@ -88,10 +87,10 @@ object TtsModelStore {
             onProgress(PERCENT)
             InstallResult.Success
         } catch (e: IOException) {
-            Log.w(TAG, "install failed", e)
+            VoiceLog.w(TAG, "install failed", e)
             InstallResult.Failed(e.message ?: "Lỗi mạng")
         } catch (e: IllegalStateException) {
-            Log.w(TAG, "install failed", e)
+            VoiceLog.w(TAG, "install failed", e)
             InstallResult.Failed(e.message ?: "Lỗi")
         } finally {
             archive.delete()

@@ -11,7 +11,6 @@ import android.os.RemoteException
 import android.util.Log
 import com.example.jaecoovoice.engine.AndroidTrackPlayer
 import com.example.jaecoovoice.engine.CallerCheck
-import com.example.jaecoovoice.engine.CrashTrace
 import com.example.jaecoovoice.engine.EngineCore
 import com.example.jaecoovoice.engine.HotwordFormat
 import com.example.jaecoovoice.engine.IListenCallback
@@ -23,6 +22,7 @@ import com.example.jaecoovoice.engine.ModelCatalog
 import com.example.jaecoovoice.engine.ModelDownloads
 import com.example.jaecoovoice.engine.ModelListener
 import com.example.jaecoovoice.engine.ModelStore
+import com.example.jaecoovoice.engine.PreviousRun
 import com.example.jaecoovoice.engine.StatusKeys
 import com.example.jaecoovoice.engine.TtsCache
 import com.example.jaecoovoice.engine.TtsCatalog
@@ -31,6 +31,7 @@ import com.example.jaecoovoice.engine.TtsModel
 import com.example.jaecoovoice.engine.TtsModelDownloads
 import com.example.jaecoovoice.engine.TtsModelStore
 import com.example.jaecoovoice.engine.TtsPlayer
+import com.example.jaecoovoice.engine.VoiceLog
 import java.io.File
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicLong
@@ -180,7 +181,7 @@ class VoiceEngineService : Service() {
             val lang = language.orEmpty()
             val model = TtsCatalog.forLanguage(lang)
             // A previous native crash leaves no trace but this; tell JaecooApp (it logs and shows it).
-            CrashTrace.takeReport(this@VoiceEngineService)?.let { speakFailed(cb, it) }
+            PreviousRun.take()?.let { speakFailed(cb, it) }
             when {
                 txt.isBlank() -> safely { cb?.onDone() }
                 model == null || !TtsModelStore.isInstalled(filesDir, model) -> speakFailed(cb, "tts model not installed: $lang")
@@ -335,7 +336,7 @@ class VoiceEngineService : Service() {
 
     /** Every speak failure is logged here and reaches JaecooApp, which sends it to the log server. */
     private fun speakFailed(cb: ITtsCallback?, reason: String) {
-        Log.w(TTS_TAG, reason)
+        VoiceLog.w(TTS_TAG, reason)
         safely { cb?.onError(reason) }
     }
 
@@ -397,7 +398,7 @@ class VoiceEngineService : Service() {
             call()
             true
         } catch (e: RemoteException) {
-            Log.w(TAG, "JaecooApp is gone", e)
+            VoiceLog.w(TAG, "JaecooApp is gone", e)
             false
         }
     }

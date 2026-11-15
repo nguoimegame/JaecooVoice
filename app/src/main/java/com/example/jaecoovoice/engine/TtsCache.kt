@@ -1,6 +1,5 @@
 package com.example.jaecoovoice.engine
 
-import android.util.Log
 import java.io.File
 import java.io.IOException
 import java.nio.ByteBuffer
@@ -35,7 +34,7 @@ class TtsCache(
         val speech = try {
             decode(file.readBytes())
         } catch (e: IOException) {
-            Log.w(TAG, "cannot read cached speech", e)
+            VoiceLog.w(TAG, "cannot read cached speech", e)
             null
         }
         if (speech == null) {
@@ -57,7 +56,7 @@ class TtsCache(
             evict()
         } catch (e: IOException) {
             // A cache that cannot write is just a cache that misses.
-            Log.w(TAG, "cannot cache speech", e)
+            VoiceLog.w(TAG, "cannot cache speech", e)
         }
     }
 
