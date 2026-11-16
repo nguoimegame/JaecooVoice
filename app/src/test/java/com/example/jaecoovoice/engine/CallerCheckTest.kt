@@ -17,4 +17,11 @@ class CallerCheckTest {
 
     @Test
     fun aSharedUidThatIncludesJaecooAppIsAllowed() = assertTrue(CallerCheck.isAllowed(arrayOf("com.other", "com.example.jaecooapp")))
+
+    @Test
+    fun allowsBothJaecooAppAndJaecooAssistant() {
+        assertTrue(CallerCheck.isAllowed(arrayOf("com.example.jaecooapp")))
+        assertTrue(CallerCheck.isAllowed(arrayOf("com.example.jaecooassistant")))
+        assertFalse(CallerCheck.isAllowed(arrayOf("com.example.other")))
+    }
 }

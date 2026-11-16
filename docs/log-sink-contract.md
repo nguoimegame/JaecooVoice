@@ -9,7 +9,7 @@ File này giống hệt nhau trong ba repo (JaecooApp, JaecooVoice, JStore); đ�
 - ContentProvider `com.example.jaecooapp.LogSinkProvider`, authority `com.example.jaecooapp.logsink`, `exported="true"`.
 - Gọi: `ContentResolver.call(Uri.parse("content://com.example.jaecooapp.logsink"), "log", "1", extras)`. `arg` là phiên bản hợp đồng (`"1"`).
 - Cuộc gọi tự khởi động process JaecooApp nếu nó đang không chạy.
-- Người gọi được kiểm bằng uid, như `NavInfoProvider`: uid có package `com.example.jaecoovoice` (JaecooApp ghi là `jaecoovoice`) hoặc `com.example.jstore` (`jstore`). Người khác nhận `accepted = 0`, mỗi uid được ghi một dòng `W` tag `LogSink`.
+- Người gọi được kiểm bằng uid, như `NavInfoProvider`: uid có package `com.example.jaecoovoice` (JaecooApp ghi là `jaecoovoice`), `com.example.jstore` (`jstore`) hoặc `com.example.jaecooassistant` (`jaecooassistant`). Người khác nhận `accepted = 0`, mỗi uid được ghi một dòng `W` tag `LogSink`.
 
 ## Dữ liệu
 

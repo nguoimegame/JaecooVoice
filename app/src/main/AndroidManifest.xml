@@ -14,6 +14,7 @@
 
     <queries>
         <package android:name="com.example.jaecooapp" />
+        <package android:name="com.example.jaecooassistant" />
     </queries>
 
     <!-- No launcher activity: JaecooApp installs, configures and drives this app. -->
