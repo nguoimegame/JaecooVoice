@@ -230,12 +230,20 @@ private fun tryCreateRecorder(cand: Int, bufferSize: Int): AudioRecord? = try {
 
 private fun startActiveRecording(recorder: AudioRecord, cand: Int): Boolean {
     if (recorder.state != AudioRecord.STATE_INITIALIZED) {
+        VoiceLog.w("AudioCapture", "AudioRecord not initialized for source $cand (state=${recorder.state})")
         recorder.release()
         return false
     }
     val ok = try {
         recorder.startRecording()
-        recorder.recordingState == AudioRecord.RECORDSTATE_RECORDING
+        val recording = recorder.recordingState == AudioRecord.RECORDSTATE_RECORDING
+        if (!recording) {
+            VoiceLog.w(
+                "AudioCapture",
+                "startRecording not recording for source $cand (state=${recorder.recordingState})"
+            )
+        }
+        recording
     } catch (e: IllegalStateException) {
         VoiceLog.w("AudioCapture", "Cannot startRecording for source $cand", e)
         false
