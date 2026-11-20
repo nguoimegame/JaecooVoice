@@ -10,4 +10,4 @@ App Android không có icon, làm bộ nhận dạng giọng nói offline (sherp
 - Chuỗi người dùng nhìn thấy có đủ 13 file `strings.xml` (cùng tập locale với JaecooApp). Câu báo lỗi cho tài xế do JaecooApp viết; `detail` ở đây chỉ để ghi log.
 - espeak-ng là git submodule (`app/src/main/cpp/third_party/espeak-ng`): clone bằng `--recurse-submodules` hoặc chạy `git submodule update --init`. Build cần NDK `27.0.12077973` và CMake 3.22.1 (`libjaecoo-espeak.so`).
 - Build và kiểm: `./gradlew check assembleDebug`. `ktlintCheck` và `detekt` chạy trong `check`, baseline rỗng, không thêm gì vào baseline.
-- Phát hành: tag `vX.Y.Z` chạy `.github/workflows/voice-release.yml`, đẩy APK lên server japp.cloud qua repo JaecooApp (cần secret `JAECOOAPP_TOKEN`).
+- Phát hành: tag `vX.Y.Z` chạy `.github/workflows/voice-release.yml`, đẩy APK lên server japp.cloud qua repo JaecooServer (cần secret `JAECOOSERVER_TOKEN`).
