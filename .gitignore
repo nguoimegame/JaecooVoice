@@ -19,3 +19,4 @@ app/libs/
 # Signing keys never go into this public repository
 *.keystore
 *.jks
+graphify-out/

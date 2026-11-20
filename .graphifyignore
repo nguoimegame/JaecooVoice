@@ -1,0 +1,37 @@
+.gradle/
+.kotlin/
+build/
+**/build/
+.cxx/
+.externalNativeBuild/
+.idea/
+captures/
+.superpowers/
+.claude/
+.agent/
+graphify-out/
+app/libs/
+app/src/main/cpp/third_party/
+*.iml
+
+# Binaries, APKs & signing keys
+*.apk
+*.xapk
+*.aab
+*.so
+*.jar
+*.aar
+*.p12
+*.keystore
+*.jks
+
+# Offline voice models & heavy resources
+*.onnx
+*.tflite
+*.bin
+*.gguf
+assets/models/
+**/src/main/jniLibs/
+**/res/drawable*/
+**/res/mipmap*/
+**/res/raw/
