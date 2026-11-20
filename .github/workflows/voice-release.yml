@@ -1,11 +1,11 @@
 # Builds, checks and publishes JaecooVoice for every tag vX.Y.Z (or by hand). JaecooApp installs
-# and updates JaecooVoice from its own server, so the APK goes into the JaecooApp repository:
+# and updates JaecooVoice from its own server, so the APK goes into the JaecooServer repository (a push there deploys the site by itself):
 #   server/public/apks/jaecoo-voice.apk  (Git LFS)
 #   server/src/data/voice.json            (served as /api/voice.json; the site adds sha256)
 # on the branch of the chosen channel (beta -> https://japp.cloud/beta/, main -> https://japp.cloud/).
 #
-# Needs the repository secret JAECOOAPP_TOKEN: a fine-grained token on nguoimegame/JaecooApp
-# with Contents: write and Actions: write.
+# Needs the repository secret JAECOOSERVER_TOKEN: a fine-grained token on nguoimegame/JaecooServer
+# with Contents: read and write.
 # And JAECOO_KEYSTORE_B64: JaecooApp's app/debug.keystore in base64 (`base64 -w0 debug.keystore`).
 # The key is never committed to this public repository.
 # Key rotation: JAECOO_RELEASE_KEYSTORE_BASE64 and JAECOO_RELEASE_KEYSTORE_PASSWORD hold the new
@@ -146,17 +146,26 @@ jobs:
           fi
           cp "$APK" jaecoo-voice.apk
 
-      - name: Checkout JaecooApp
+      - name: Verify JAECOOSERVER_TOKEN
+        env:
+          JAECOOSERVER_TOKEN: ${{ secrets.JAECOOSERVER_TOKEN }}
+        run: |
+          if [ -z "$JAECOOSERVER_TOKEN" ]; then
+            echo "::error::Secret JAECOOSERVER_TOKEN is not set"
+            exit 1
+          fi
+
+      - name: Checkout JaecooServer
         uses: actions/checkout@v4
         with:
-          repository: nguoimegame/JaecooApp
+          repository: nguoimegame/JaecooServer
           ref: ${{ steps.version.outputs.channel }}
-          token: ${{ secrets.JAECOOAPP_TOKEN }}
+          token: ${{ secrets.JAECOOSERVER_TOKEN }}
           lfs: true
-          path: jaecooapp
+          path: jaecooserver
 
-      - name: Put the APK on the JaecooApp server
-        working-directory: jaecooapp
+      - name: Put the APK on JaecooServer
+        working-directory: jaecooserver
         env:
           TAG: ${{ steps.version.outputs.tag }}
           NAME: ${{ steps.version.outputs.name }}
@@ -174,14 +183,15 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add server/public/apks/jaecoo-voice.apk server/src/data/voice.json
-          git commit -m "chore(voice-release): $TAG"
-          git push origin "HEAD:$CHANNEL"
-
-      - name: Deploy the JaecooApp site
-        env:
-          GH_TOKEN: ${{ secrets.JAECOOAPP_TOKEN }}
-        # Always main: that one workflow builds both the main and the beta site.
-        run: gh workflow run deploy-server.yml --ref main -R nguoimegame/JaecooApp
+          # Another app may publish to the same branch at the same time.
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(voice-release): $TAG"
+            git checkout -- .
+            git pull --rebase --autostash origin "$CHANNEL"
+            git push origin "HEAD:$CHANNEL"
+          else
+            echo "No changes to publish on $CHANNEL"
+          fi
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
